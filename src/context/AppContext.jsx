@@ -1,0 +1,259 @@
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react'
+import { seedServices, seedProducts, seedStaff, defaultSettings, defaultAuth } from '../data/seed.js'
+import { uid, buildInvoiceNumber } from '../utils/helpers.js'
+
+const AppContext = createContext(null)
+
+function loadJSON(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key)
+    if (!raw) return fallback
+    return JSON.parse(raw)
+  } catch {
+    return fallback
+  }
+}
+
+function saveJSON(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value))
+  } catch (e) {
+    console.error('Failed to save', key, e)
+  }
+}
+
+const STORAGE_KEYS = {
+  auth: 'salon_auth',
+  session: 'salon_session',
+  clients: 'salon_clients',
+  services: 'salon_services',
+  products: 'salon_products',
+  staff: 'salon_staff',
+  attendance: 'salon_attendance',
+  bills: 'salon_bills',
+  settings: 'salon_settings',
+}
+
+export function AppProvider({ children }) {
+  const [isAuthed, setIsAuthed] = useState(() => loadJSON(STORAGE_KEYS.session, false))
+  const [auth, setAuth] = useState(() => loadJSON(STORAGE_KEYS.auth, defaultAuth))
+  const [clients, setClients] = useState(() => loadJSON(STORAGE_KEYS.clients, []))
+  const [services, setServices] = useState(() => loadJSON(STORAGE_KEYS.services, seedServices))
+  const [products, setProducts] = useState(() => loadJSON(STORAGE_KEYS.products, seedProducts))
+  const [staff, setStaff] = useState(() => loadJSON(STORAGE_KEYS.staff, seedStaff))
+  const [attendance, setAttendance] = useState(() => loadJSON(STORAGE_KEYS.attendance, []))
+  const [bills, setBills] = useState(() => loadJSON(STORAGE_KEYS.bills, []))
+  const [settings, setSettings] = useState(() => loadJSON(STORAGE_KEYS.settings, defaultSettings))
+
+  useEffect(() => saveJSON(STORAGE_KEYS.auth, auth), [auth])
+  useEffect(() => saveJSON(STORAGE_KEYS.session, isAuthed), [isAuthed])
+  useEffect(() => saveJSON(STORAGE_KEYS.clients, clients), [clients])
+  useEffect(() => saveJSON(STORAGE_KEYS.services, services), [services])
+  useEffect(() => saveJSON(STORAGE_KEYS.products, products), [products])
+  useEffect(() => saveJSON(STORAGE_KEYS.staff, staff), [staff])
+  useEffect(() => saveJSON(STORAGE_KEYS.attendance, attendance), [attendance])
+  useEffect(() => saveJSON(STORAGE_KEYS.bills, bills), [bills])
+  useEffect(() => saveJSON(STORAGE_KEYS.settings, settings), [settings])
+
+  const login = useCallback(
+    (username, password) => {
+      if (username === auth.username && password === auth.password) {
+        setIsAuthed(true)
+        return true
+      }
+      return false
+    },
+    [auth],
+  )
+
+  const logout = useCallback(() => setIsAuthed(false), [])
+
+  const changeCredentials = useCallback((username, password) => {
+    setAuth({ username, password })
+  }, [])
+
+  // ---- Clients ----
+  const upsertClient = useCallback((client) => {
+    setClients((prev) => {
+      const exists = prev.find((c) => c.id === client.id)
+      if (exists) return prev.map((c) => (c.id === client.id ? { ...c, ...client } : c))
+      return [...prev, { visits: [], totalSpent: 0, createdAt: new Date().toISOString(), ...client }]
+    })
+  }, [])
+
+  const findClientByPhone = useCallback((phone) => clients.find((c) => c.phone === phone), [clients])
+
+  const deleteClient = useCallback((id) => {
+    setClients((prev) => prev.filter((c) => c.id !== id))
+  }, [])
+
+  // ---- Services ----
+  const upsertService = useCallback((service) => {
+    setServices((prev) => {
+      const exists = prev.find((s) => s.id === service.id)
+      if (exists) return prev.map((s) => (s.id === service.id ? { ...s, ...service } : s))
+      return [...prev, { id: uid('svc'), ...service }]
+    })
+  }, [])
+
+  const deleteService = useCallback((id) => {
+    setServices((prev) => prev.filter((s) => s.id !== id))
+  }, [])
+
+  // ---- Products ----
+  const upsertProduct = useCallback((product) => {
+    setProducts((prev) => {
+      const exists = prev.find((p) => p.id === product.id)
+      if (exists) return prev.map((p) => (p.id === product.id ? { ...p, ...product } : p))
+      return [...prev, { id: uid('prd'), ...product }]
+    })
+  }, [])
+
+  const deleteProduct = useCallback((id) => {
+    setProducts((prev) => prev.filter((p) => p.id !== id))
+  }, [])
+
+  const adjustStock = useCallback((id, delta) => {
+    setProducts((prev) => prev.map((p) => (p.id === id ? { ...p, stock: Math.max(0, p.stock + delta) } : p)))
+  }, [])
+
+  // ---- Staff ----
+  const upsertStaff = useCallback((member) => {
+    setStaff((prev) => {
+      const exists = prev.find((s) => s.id === member.id)
+      if (exists) return prev.map((s) => (s.id === member.id ? { ...s, ...member } : s))
+      return [...prev, { id: uid('stf'), active: true, ...member }]
+    })
+  }, [])
+
+  const deleteStaff = useCallback((id) => {
+    setStaff((prev) => prev.filter((s) => s.id !== id))
+  }, [])
+
+  // ---- Attendance ----
+  // One record per staff member per date. markAttendance upserts by (staffId, date).
+  const markAttendance = useCallback((record) => {
+    setAttendance((prev) => {
+      const existing = prev.find((a) => a.staffId === record.staffId && a.date === record.date)
+      if (existing) return prev.map((a) => (a.id === existing.id ? { ...a, ...record } : a))
+      return [...prev, { id: uid('att'), ...record }]
+    })
+  }, [])
+
+  const deleteAttendance = useCallback((id) => {
+    setAttendance((prev) => prev.filter((a) => a.id !== id))
+  }, [])
+
+  // ---- Bills ----
+  const createBill = useCallback(
+    (billDraft) => {
+      const billNo = buildInvoiceNumber(settings.invoicePrefix, settings.invoiceCounter)
+      const bill = {
+        id: uid('bill'),
+        billNo,
+        date: new Date().toISOString(),
+        ...billDraft,
+      }
+      setBills((prev) => [bill, ...prev])
+      setSettings((prev) => ({ ...prev, invoiceCounter: prev.invoiceCounter + 1 }))
+
+      // Deduct product stock
+      bill.items
+        .filter((it) => it.type === 'product')
+        .forEach((it) => {
+          setProducts((prev) => prev.map((p) => (p.id === it.refId ? { ...p, stock: Math.max(0, p.stock - it.qty) } : p)))
+        })
+
+      // Update client history
+      if (bill.client?.id) {
+        setClients((prev) =>
+          prev.map((c) =>
+            c.id === bill.client.id
+              ? {
+                  ...c,
+                  totalSpent: (c.totalSpent || 0) + bill.total,
+                  lastVisit: bill.date,
+                  visits: [...(c.visits || []), { billId: bill.id, date: bill.date, total: bill.total, items: bill.items.map((i) => i.name) }],
+                }
+              : c,
+          ),
+        )
+      }
+      return bill
+    },
+    [settings],
+  )
+
+  const deleteBill = useCallback((id) => {
+    setBills((prev) => prev.filter((b) => b.id !== id))
+  }, [])
+
+  // ---- Settings ----
+  const updateSettings = useCallback((patch) => {
+    setSettings((prev) => ({ ...prev, ...patch }))
+  }, [])
+
+  // ---- Backup / Restore ----
+  const exportBackup = useCallback(() => {
+    return {
+      exportedAt: new Date().toISOString(),
+      clients,
+      services,
+      products,
+      staff,
+      attendance,
+      bills,
+      settings,
+    }
+  }, [clients, services, products, staff, attendance, bills, settings])
+
+  const restoreBackup = useCallback((data) => {
+    if (data.clients) setClients(data.clients)
+    if (data.services) setServices(data.services)
+    if (data.products) setProducts(data.products)
+    if (data.staff) setStaff(data.staff)
+    if (data.attendance) setAttendance(data.attendance)
+    if (data.bills) setBills(data.bills)
+    if (data.settings) setSettings(data.settings)
+  }, [])
+
+  const value = {
+    isAuthed,
+    login,
+    logout,
+    changeCredentials,
+    auth,
+    clients,
+    upsertClient,
+    findClientByPhone,
+    deleteClient,
+    services,
+    upsertService,
+    deleteService,
+    products,
+    upsertProduct,
+    deleteProduct,
+    adjustStock,
+    staff,
+    upsertStaff,
+    deleteStaff,
+    attendance,
+    markAttendance,
+    deleteAttendance,
+    bills,
+    createBill,
+    deleteBill,
+    settings,
+    updateSettings,
+    exportBackup,
+    restoreBackup,
+  }
+
+  return <AppContext.Provider value={value}>{children}</AppContext.Provider>
+}
+
+export function useApp() {
+  const ctx = useContext(AppContext)
+  if (!ctx) throw new Error('useApp must be used within AppProvider')
+  return ctx
+}

@@ -1,0 +1,89 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: 'Inter', sans-serif;
+  }
+  body {
+    @apply bg-cream text-ink antialiased;
+  }
+  ::selection {
+    @apply bg-brass/30;
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #C79A4B33 transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background-color: #C79A4B33;
+    border-radius: 8px;
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-plum text-cream hover:bg-plum-dark;
+  }
+  .btn-brass {
+    @apply btn bg-brass text-ink hover:bg-brass-dark;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent text-ink hover:bg-ink/5 border border-black/10;
+  }
+  .btn-danger {
+    @apply btn bg-danger/10 text-danger hover:bg-danger/20;
+  }
+  .card {
+    @apply bg-paper rounded-xl2 shadow-card border border-black/5;
+  }
+  .input {
+    @apply w-full rounded-lg border border-black/10 bg-white px-3.5 py-2.5 text-sm text-ink placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-brass/60 focus:border-brass transition;
+  }
+  .label {
+    @apply block text-xs font-semibold uppercase tracking-wide text-muted mb-1.5;
+  }
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold;
+  }
+}
+
+@media print {
+  html, body {
+    background: #fff;
+  }
+  body * {
+    visibility: hidden;
+  }
+  #print-root, #print-root * {
+    visibility: visible;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  #print-root {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+  .invoice-sheet {
+    max-width: 640px;
+    margin: 0 auto;
+  }
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
+}
