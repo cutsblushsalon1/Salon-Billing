@@ -1,9 +1,9 @@
 import React, { useMemo, useState } from 'react'
-import { Search, Eye, Printer, Download, ExternalLink, Trash2, Receipt, CalendarRange, X } from 'lucide-react'
+import { Search, Eye, Printer, Download, ExternalLink , Trash2, Receipt, CalendarRange, X } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, Modal, EmptyState, Badge } from '../components/ui.jsx'
 import BillPreview from '../components/BillPreview.jsx'
-import { formatCurrency, formatDateTime, isInRange, whatsappBillMessage, whatsappLink } from '../utils/helpers.js'
+import { formatCurrency, formatDateTime, isInRange, whatsappBillMessage, whatsappLink, getBillStaffNames } from '../utils/helpers.js'
 import { downloadBillPDF } from '../utils/pdf.js'
 
 const PAYMENT_FILTERS = ['All', 'Cash', 'Card', 'UPI', 'Wallet']
@@ -119,7 +119,7 @@ export default function BillingHistory() {
                       {b.client?.phone && <p className="text-xs text-muted">{b.client.phone}</p>}
                     </td>
                     <td className="px-5 py-3.5 text-muted whitespace-nowrap">{formatDateTime(b.date)}</td>
-                    <td className="px-5 py-3.5 text-muted">{b.staff?.name || '—'}</td>
+                    <td className="px-5 py-3.5 text-muted">{getBillStaffNames(b).join(', ') || '—'}</td>
                     <td className="px-5 py-3.5">
                       <Badge tone="brass">{b.paymentMethod}</Badge>
                     </td>
@@ -142,7 +142,7 @@ export default function BillingHistory() {
                             className="p-1.5 text-muted hover:text-success"
                             title="Share on WhatsApp"
                           >
-                            <ExternalLink size={15} />
+                            <ExternalLink  size={15} />
                           </a>
                         )}
                         <button onClick={() => setConfirmDelete(b)} className="p-1.5 text-muted hover:text-danger" title="Delete">
@@ -179,7 +179,7 @@ export default function BillingHistory() {
                   rel="noreferrer"
                   className="btn-brass"
                 >
-                  <ExternalLink size={15} /> Share on WhatsApp
+                  <ExternalLink  size={15} /> Share on WhatsApp
                 </a>
               )}
             </div>

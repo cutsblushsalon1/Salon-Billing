@@ -1,6 +1,6 @@
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
-import { formatCurrency, formatDate, calcLineTotal } from './helpers.js'
+import { formatCurrency, formatDate, calcLineTotal, getBillStaffNames } from './helpers.js'
 
 export function downloadBillPDF(bill, settings) {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' })
@@ -42,26 +42,29 @@ export function downloadBillPDF(bill, settings) {
     doc.text(`Phone: ${bill.client.phone}`, margin, y)
     y += 14
   }
+  const staffNames = getBillStaffNames(bill)
+  if (staffNames.length > 0) {
+    doc.text(`Served by: ${staffNames.join(', ')}`, margin, y)
+    y += 14
+  }
   y += 10
 
   const hasItemDiscounts = bill.items.some((it) => Number(it.discountPercent) > 0)
+  const hasStaffColumn = bill.items.some((it) => it.staffName)
 
   autoTable(doc, {
     startY: y,
-    head: hasItemDiscounts
-      ? [['Item', 'Type', 'Qty', 'Price', 'Disc %', 'Amount']]
-      : [['Item', 'Type', 'Qty', 'Price', 'Amount']],
+    head: [
+      ['Item', 'Type', ...(hasStaffColumn ? ['Staff'] : []), 'Qty', 'Price', ...(hasItemDiscounts ? ['Disc %'] : []), 'Amount'],
+    ],
     body: bill.items.map((it) => {
       const line = calcLineTotal(it)
-      const base = [
-        it.name,
-        it.type === 'service' ? 'Service' : 'Product',
-        String(it.qty),
-        formatCurrency(it.price, settings.currencySymbol),
-      ]
-      if (hasItemDiscounts) base.push(it.discountPercent ? `${it.discountPercent}%` : '—')
-      base.push(formatCurrency(line.net, settings.currencySymbol))
-      return base
+      const row = [it.name, it.type === 'service' ? 'Service' : 'Product']
+      if (hasStaffColumn) row.push(it.staffName || '—')
+      row.push(String(it.qty), formatCurrency(it.price, settings.currencySymbol))
+      if (hasItemDiscounts) row.push(it.discountPercent ? `${it.discountPercent}%` : '—')
+      row.push(formatCurrency(line.net, settings.currencySymbol))
+      return row
     }),
     theme: 'grid',
     headStyles: { fillColor: [91, 35, 51], textColor: 255, fontSize: 10 },

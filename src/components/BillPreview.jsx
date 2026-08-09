@@ -1,9 +1,10 @@
 import React from 'react'
 import { createPortal } from 'react-dom'
 import { Scissors } from 'lucide-react'
-import { formatCurrency, formatDate, calcLineTotal } from '../utils/helpers.js'
+import { formatCurrency, formatDate, calcLineTotal, getBillStaffNames } from '../utils/helpers.js'
 
 function InvoiceLayout({ bill, settings }) {
+  const staffNames = getBillStaffNames(bill)
   return (
     <div className="bg-white text-ink font-body invoice-sheet">
       <div className="flex items-start justify-between mb-6 pb-5 border-b border-ink/10">
@@ -34,7 +35,7 @@ function InvoiceLayout({ bill, settings }) {
           <p className="text-muted mb-1 uppercase tracking-wide text-[10px]">Details</p>
           <p className="text-ink">{settings.phone}</p>
           <p className="text-muted mt-0.5">Paid via {bill.paymentMethod}</p>
-          {bill.staff?.name && <p className="text-muted mt-0.5">Served by {bill.staff.name}</p>}
+          {staffNames.length > 0 && <p className="text-muted mt-0.5">Served by {staffNames.join(', ')}</p>}
         </div>
       </div>
 
@@ -55,6 +56,7 @@ function InvoiceLayout({ bill, settings }) {
                 <td className="py-2.5 pr-2">
                   <span>{it.name}</span>
                   {it.type === 'product' && <span className="text-muted text-[10px] ml-1.5">(product)</span>}
+                  {it.staffName && <span className="block text-[10px] text-muted mt-0.5">by {it.staffName}</span>}
                   {line.discount > 0 && (
                     <span className="block text-[10px] text-brass-dark mt-0.5">{it.discountPercent}% off applied</span>
                   )}

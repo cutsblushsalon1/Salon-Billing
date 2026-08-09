@@ -42,7 +42,6 @@ export default function NewBill() {
 
   // Cart
   const [cart, setCart] = useState([])
-  const [staffId, setStaffId] = useState('')
   const [discountType, setDiscountType] = useState('none')
   const [discountValue, setDiscountValue] = useState('')
   const [taxPercent, setTaxPercent] = useState(settings.defaultTaxPercent || 0)
@@ -77,7 +76,7 @@ export default function NewBill() {
       if (existing) {
         return prev.map((c) => (c.refId === item.id && c.type === type ? { ...c, qty: c.qty + 1 } : c))
       }
-      return [...prev, { refId: item.id, type, name: item.name, price: item.price, qty: 1, discountPercent: 0 }]
+      return [...prev, { refId: item.id, type, name: item.name, price: item.price, qty: 1, discountPercent: 0, staffId: '', staffName: '' }]
     })
   }
 
@@ -92,6 +91,15 @@ export default function NewBill() {
   function updateItemDiscount(refId, type, value) {
     const clamped = Math.max(0, Math.min(100, Number(value) || 0))
     setCart((prev) => prev.map((c) => (c.refId === refId && c.type === type ? { ...c, discountPercent: clamped } : c)))
+  }
+
+  function updateItemStaff(refId, type, newStaffId) {
+    const member = activeStaff.find((s) => s.id === newStaffId)
+    setCart((prev) =>
+      prev.map((c) =>
+        c.refId === refId && c.type === type ? { ...c, staffId: newStaffId, staffName: member?.name || '' } : c,
+      ),
+    )
   }
 
   function removeFromCart(refId, type) {
@@ -116,10 +124,10 @@ export default function NewBill() {
   function handleGenerateBill() {
     if (cart.length === 0) return
     const client = resolveClient()
-    const attendedBy = activeStaff.find((s) => s.id === staffId)
+    const staffList = Array.from(new Map(cart.filter((c) => c.staffId).map((c) => [c.staffId, { id: c.staffId, name: c.staffName }])).values())
     const bill = createBill({
       client: client ? { id: client.id, name: client.name, phone: client.phone } : { name: 'Walk-in Customer' },
-      staff: attendedBy ? { id: attendedBy.id, name: attendedBy.name } : null,
+      staffList,
       items: cart,
       discountType,
       discountValue: Number(discountValue) || 0,
@@ -132,7 +140,6 @@ export default function NewBill() {
 
   function resetForm() {
     setCart([])
-    setStaffId('')
     setSelectedClient(null)
     setShowNewClientForm(false)
     setNewClient({ name: '', phone: '', email: '', gender: 'Female' })
@@ -143,7 +150,7 @@ export default function NewBill() {
     setGeneratedBill(null)
   }
 
-  const canGenerate = cart.length > 0 && !!staffId
+  const canGenerate = cart.length > 0 && cart.every((c) => !!c.staffId)
 
   return (
     <div>
@@ -318,22 +325,13 @@ export default function NewBill() {
         {/* Cart / Summary */}
         <div className="lg:sticky lg:top-20 h-fit space-y-4">
           <section className="card p-5 sm:p-6">
-            <p className="font-display text-lg text-ink mb-4">Bill summary</p>
+            <p className="font-display text-lg text-ink mb-2">Bill summary</p>
 
-            <div className="mb-4">
-              <label className="label">Staff attending</label>
-              <select className="input" value={staffId} onChange={(e) => setStaffId(e.target.value)}>
-                <option value="">Select staff…</option>
-                {activeStaff.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} — {s.role}
-                  </option>
-                ))}
-              </select>
-              {activeStaff.length === 0 && (
-                <p className="text-xs text-danger mt-1.5">No active staff found — add one from the Staff page first.</p>
-              )}
-            </div>
+            {activeStaff.length === 0 && (
+              <p className="text-xs text-danger mb-4 p-2.5 rounded-lg bg-danger/5">
+                No active staff found — add one from the Staff page before billing.
+              </p>
+            )}
 
             {cart.length === 0 ? (
               <p className="text-sm text-muted py-6 text-center">Add services or products to build the bill.</p>
@@ -369,6 +367,21 @@ export default function NewBill() {
                             <Trash2 size={14} />
                           </button>
                         </div>
+                      </div>
+                      <div className="mt-2">
+                        <select
+                          value={c.staffId}
+                          onChange={(e) => updateItemStaff(c.refId, c.type, e.target.value)}
+                          className={`w-full rounded-md border p-2 text-xs focus:outline-none
+                          }`}
+                        >
+                          <option value="">Assign staff…</option>
+                          {activeStaff.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name} — {s.role}
+                            </option>
+                          ))}
+                        </select>
                       </div>
                       <div className="flex items-center justify-between gap-2 mt-1.5">
                         <div className="flex items-center gap-1.5">
@@ -474,6 +487,9 @@ export default function NewBill() {
             <button onClick={handleGenerateBill} disabled={!canGenerate} className="btn-primary w-full py-3 mt-5">
               <ReceiptText size={16} /> Generate Bill
             </button>
+            {cart.length > 0 && !canGenerate && (
+              <p className="text-xs text-danger text-center mt-2">Assign a staff member to every item to continue.</p>
+            )}
           </section>
         </div>
       </div>

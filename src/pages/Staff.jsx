@@ -16,7 +16,7 @@ import {
 } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, Modal, EmptyState, Badge } from '../components/ui.jsx'
-import { formatCurrency, formatDate, uid, isSameMonth } from '../utils/helpers.js'
+import { formatCurrency, formatDate, uid, isSameMonth, calcLineTotal } from '../utils/helpers.js'
 import { downloadAttendanceExcel } from '../utils/excel.js'
 
 const emptyForm = { name: '', role: '', phone: '', commissionPercent: '10', salary: '', joinedAt: '' }
@@ -44,16 +44,39 @@ export default function Staff() {
   const statsByStaff = useMemo(() => {
     const map = {}
     const today = new Date()
+
+    function ensure(id) {
+      if (!map[id]) map[id] = { count: 0, revenue: 0, monthCount: 0, monthRevenue: 0 }
+      return map[id]
+    }
+
     bills.forEach((b) => {
-      if (!b.staff?.id) return
-      if (!map[b.staff.id]) map[b.staff.id] = { count: 0, revenue: 0, monthCount: 0, monthRevenue: 0 }
-      map[b.staff.id].count += 1
-      map[b.staff.id].revenue += b.total
-      if (isSameMonth(b.date, today)) {
-        map[b.staff.id].monthCount += 1
-        map[b.staff.id].monthRevenue += b.total
+      const inMonth = isSameMonth(b.date, today)
+      const itemsWithStaff = b.items?.filter((it) => it.staffId) || []
+
+      if (itemsWithStaff.length > 0) {
+        itemsWithStaff.forEach((it) => {
+          const line = calcLineTotal(it)
+          const entry = ensure(it.staffId)
+          entry.count += 1
+          entry.revenue += line.net
+          if (inMonth) {
+            entry.monthCount += 1
+            entry.monthRevenue += line.net
+          }
+        })
+      } else if (b.staff?.id) {
+        // Legacy bills created before per-item staff assignment existed
+        const entry = ensure(b.staff.id)
+        entry.count += 1
+        entry.revenue += b.total
+        if (inMonth) {
+          entry.monthCount += 1
+          entry.monthRevenue += b.total
+        }
       }
     })
+
     return map
   }, [bills])
 
@@ -178,7 +201,7 @@ export default function Staff() {
 
                     <div className="grid grid-cols-2 gap-2 mb-2 text-xs">
                       <div className="bg-black/[0.02] rounded-lg p-2.5">
-                        <p className="text-muted mb-0.5">Bills served</p>
+                        <p className="text-muted mb-0.5">Items served</p>
                         <p className="font-semibold text-ink tabular">{stats.count}</p>
                       </div>
                       <div className="bg-black/[0.02] rounded-lg p-2.5">
@@ -187,18 +210,18 @@ export default function Staff() {
                       </div>
                       <div className="bg-black/[0.02] rounded-lg p-2.5">
                         <p className="text-muted mb-0.5 flex items-center gap-1">
-                          <Percent size={11} /> Month commission
-                        </p>
-                        <p className="font-semibold text-ink tabular">
-                          {formatCurrency((stats.monthRevenue * (s.commissionPercent || 0)) / 100, settings.currencySymbol)}
-                        </p>
-                      </div>
-                      <div className="bg-black/[0.02] rounded-lg p-2.5">
-                        <p className="text-muted mb-0.5 flex items-center gap-1">
                           <Percent size={11} /> Lifetime commission
                         </p>
                         <p className="font-semibold text-ink tabular">
                           {formatCurrency((stats.revenue * (s.commissionPercent || 0)) / 100, settings.currencySymbol)}
+                        </p>
+                      </div>
+                      <div className="bg-black/[0.02] rounded-lg p-2.5">
+                        <p className="text-muted mb-0.5 flex items-center gap-1">
+                          <Percent size={11} /> Monthly commission
+                        </p>
+                        <p className="font-semibold text-ink tabular">
+                          {formatCurrency((stats.monthRevenue * (s.commissionPercent || 0)) / 100, settings.currencySymbol)}
                         </p>
                       </div>
                       <div className="bg-black/[0.02] rounded-lg p-2.5">

@@ -15,7 +15,7 @@ import {
 import { CalendarRange, TrendingUp, Users, Users2, Scissors, CreditCard, X } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, StatCard, EmptyState } from '../components/ui.jsx'
-import { formatCurrency, formatDate, isInRange, isSameMonth } from '../utils/helpers.js'
+import { formatCurrency, formatDate, isInRange, isSameMonth, calcLineTotal, getBillStaffNames } from '../utils/helpers.js'
 
 const TABS = [
   { id: 'revenue', label: 'Revenue', icon: TrendingUp },
@@ -79,10 +79,22 @@ export default function Reports() {
   const staffStats = useMemo(() => {
     const map = {}
     scopedBills.forEach((b) => {
-      if (!b.staff?.name) return
-      if (!map[b.staff.name]) map[b.staff.name] = { name: b.staff.name, count: 0, revenue: 0 }
-      map[b.staff.name].count += 1
-      map[b.staff.name].revenue += b.total
+      const itemsWithStaff = b.items?.filter((it) => it.staffName) || []
+      if (itemsWithStaff.length > 0) {
+        itemsWithStaff.forEach((it) => {
+          const line = calcLineTotal(it)
+          if (!map[it.staffName]) map[it.staffName] = { name: it.staffName, count: 0, revenue: 0 }
+          map[it.staffName].count += 1
+          map[it.staffName].revenue += line.net
+        })
+      } else {
+        // Legacy bills created before per-item staff assignment existed
+        getBillStaffNames(b).forEach((name) => {
+          if (!map[name]) map[name] = { name, count: 0, revenue: 0 }
+          map[name].count += 1
+          map[name].revenue += b.total
+        })
+      }
     })
     return Object.values(map).sort((a, b) => b.revenue - a.revenue)
   }, [scopedBills])
