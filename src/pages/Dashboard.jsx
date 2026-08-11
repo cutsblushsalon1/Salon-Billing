@@ -11,13 +11,14 @@ import {
   Scissors,
   Package,
   ArrowUpRight,
+  Bell,
 } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { StatCard, PageHeader, EmptyState, Badge } from '../components/ui.jsx'
-import { formatCurrency, formatDateTime, isSameDay, isSameMonth } from '../utils/helpers.js'
+import { formatCurrency, formatDateTime, isSameDay, isSameMonth, daysSince } from '../utils/helpers.js'
 
 export default function Dashboard() {
-  const { bills, clients, settings, products } = useApp()
+  const { bills, clients, settings, products, followUps } = useApp()
   const navigate = useNavigate()
   const today = new Date()
 
@@ -61,6 +62,18 @@ export default function Dashboard() {
 
   const lowStockCount = products.filter((p) => p.stock <= (p.lowStockAt ?? 5)).length
   const recentBills = bills.slice(0, 6)
+
+  const dueForFollowUp = useMemo(() => {
+    if (!settings.followUpEnabled) return 0
+    return clients.filter((c) => {
+      if (!c.lastVisit || !c.phone) return false
+      if (daysSince(c.lastVisit) < (Number(settings.followUpDays) || 25)) return false
+      const lastContact = followUps
+        .filter((f) => f.clientId === c.id)
+        .sort((a, b) => new Date(b.sentAt) - new Date(a.sentAt))[0]
+      return !lastContact || new Date(lastContact.sentAt) <= new Date(c.lastVisit)
+    }).length
+  }, [clients, followUps, settings.followUpEnabled, settings.followUpDays])
 
   return (
     <div>
@@ -228,6 +241,16 @@ export default function Dashboard() {
             <QuickAction icon={Scissors} label="Add Service" onClick={() => navigate('/services')} />
             <QuickAction icon={Package} label="Stock" onClick={() => navigate('/products')} />
           </div>
+          {dueForFollowUp > 0 && (
+            <div className="mt-4 p-3 rounded-lg bg-brass/10 text-brass-dark text-xs font-medium flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <Bell size={13} /> {dueForFollowUp} client{dueForFollowUp > 1 ? 's' : ''} due for a follow-up
+              </span>
+              <button onClick={() => navigate('/follow-ups')} className="underline font-semibold">
+                Review
+              </button>
+            </div>
+          )}
           {lowStockCount > 0 && (
             <div className="mt-4 p-3 rounded-lg bg-danger/10 text-danger text-xs font-medium flex items-center justify-between">
               <span>{lowStockCount} product{lowStockCount > 1 ? 's' : ''} running low</span>

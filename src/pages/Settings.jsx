@@ -1,10 +1,10 @@
 import React, { useRef, useState } from 'react'
-import { Store, ReceiptText, DatabaseBackup, KeyRound, Download, Upload, Check } from 'lucide-react'
+import { CircleUserRound, ReceiptText, DatabaseBackup, KeyRound, Download, Upload, Check, Bell, Zap, TriangleAlert } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader } from '../components/ui.jsx'
 
 export default function Settings() {
-  const { settings, updateSettings, exportBackup, restoreBackup, auth, changeCredentials } = useApp()
+  const { settings, updateSettings, exportBackup, restoreBackup, auth, changeCredentials, templates } = useApp()
   const [form, setForm] = useState(settings)
   const [savedFlash, setSavedFlash] = useState(false)
   const [credForm, setCredForm] = useState({ username: auth.username, password: '' })
@@ -62,7 +62,7 @@ export default function Settings() {
         {/* Salon Profile */}
         <section className="card p-5 sm:p-6">
           <div className="flex items-center gap-2 mb-4">
-            <Store size={17} className="text-plum" />
+            <CircleUserRound size={17} className="text-plum" />
             <p className="font-display text-lg text-ink">Salon profile</p>
           </div>
           <div className="space-y-3">
@@ -145,6 +145,123 @@ export default function Settings() {
           </div>
         </section>
       </div>
+
+      {/* Follow-up reminders */}
+      <section className="card p-5 sm:p-6 mt-6">
+        <div className="flex items-center gap-2 mb-4">
+          <Bell size={17} className="text-plum" />
+          <p className="font-display text-lg text-ink">Follow-up reminders</p>
+        </div>
+
+        <label className="flex items-center gap-2.5 text-sm text-ink mb-4">
+          <input
+            type="checkbox"
+            checked={form.followUpEnabled}
+            onChange={(e) => setForm((s) => ({ ...s, followUpEnabled: e.target.checked }))}
+            className="w-4 h-4 accent-plum"
+          />
+          Flag clients for a follow-up after a period of inactivity
+        </label>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-2">
+          <div>
+            <label className="label">Days after last visit</label>
+            <input
+              className="input"
+              type="number"
+              min="1"
+              value={form.followUpDays}
+              onChange={(e) => setForm((s) => ({ ...s, followUpDays: Number(e.target.value) }))}
+              disabled={!form.followUpEnabled}
+            />
+          </div>
+          <div>
+            <label className="label">Default message template</label>
+            <select
+              className="input"
+              value={form.followUpDefaultTemplateId}
+              onChange={(e) => setForm((s) => ({ ...s, followUpDefaultTemplateId: e.target.value }))}
+              disabled={!form.followUpEnabled}
+            >
+              {templates.length === 0 && <option value="">No templates yet</option>}
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <p className="text-xs text-muted mb-5">
+          Manage the message wording itself, and send follow-ups (one at a time or in a batch queue), from the{' '}
+          <span className="font-medium text-ink">Follow-ups</span> page in the sidebar.
+        </p>
+
+        {/* Automatic sending */}
+        <div className="border-t border-black/5 pt-5">
+          <div className="flex items-center justify-between mb-3">
+            <label className="flex items-center gap-2.5 text-sm font-medium text-ink">
+              <input
+                type="checkbox"
+                checked={form.followUpAutoEnabled}
+                onChange={(e) => setForm((s) => ({ ...s, followUpAutoEnabled: e.target.checked }))}
+                className="w-4 h-4 accent-plum"
+              />
+              <Zap size={15} className="text-brass-dark" /> Automatic sending via API
+            </label>
+          </div>
+
+          <div className="flex items-start gap-2.5 p-3 rounded-lg bg-danger/5 text-xs text-ink mb-4">
+            <TriangleAlert size={15} className="text-danger mt-0.5 shrink-0" />
+            <p>
+              This app runs entirely in your browser with no server, so it can't send messages on a schedule by itself or store an
+              API key securely. The fields below just save your intended setup — to actually send automatically you'll need a small
+              backend (e.g. a scheduled cloud function) connected to a WhatsApp Business API provider, which reads these settings and
+              triggers the sends. Until that's connected, use the manual send queue on the Follow-ups page.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="label">API provider</label>
+              <select
+                className="input"
+                value={form.followUpApiProvider}
+                onChange={(e) => setForm((s) => ({ ...s, followUpApiProvider: e.target.value }))}
+                disabled={!form.followUpAutoEnabled}
+              >
+                <option value="">Not connected</option>
+                <option value="whatsapp_cloud">WhatsApp Cloud API (Meta)</option>
+                <option value="twilio">Twilio</option>
+                <option value="aisensy">AiSensy</option>
+                <option value="gupshup">Gupshup</option>
+                <option value="other">Other / custom webhook</option>
+              </select>
+            </div>
+            <div>
+              <label className="label">Sender number</label>
+              <input
+                className="input"
+                placeholder="+91…"
+                value={form.followUpSenderNumber}
+                onChange={(e) => setForm((s) => ({ ...s, followUpSenderNumber: e.target.value }))}
+                disabled={!form.followUpAutoEnabled}
+              />
+            </div>
+          </div>
+          <div className="mt-3">
+            <label className="label">API key / token</label>
+            <input
+              className="input"
+              type="password"
+              placeholder="Stored locally in this browser only"
+              value={form.followUpApiKey}
+              onChange={(e) => setForm((s) => ({ ...s, followUpApiKey: e.target.value }))}
+              disabled={!form.followUpAutoEnabled}
+            />
+          </div>
+        </div>
+      </section>
 
       <div className="flex items-center gap-3 mt-4 mb-6">
         <button onClick={handleSaveProfile} className="btn-primary">

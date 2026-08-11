@@ -9,6 +9,7 @@ import BillingHistory from './pages/BillingHistory.jsx'
 import Clients from './pages/Clients.jsx'
 import ClientProfile from './pages/ClientProfile.jsx'
 import Staff from './pages/Staff.jsx'
+import FollowUps from './pages/FollowUps.jsx'
 import Reports from './pages/Reports.jsx'
 import Services from './pages/Services.jsx'
 import Products from './pages/Products.jsx'
@@ -38,6 +39,7 @@ export default function App() {
                 <Route path="/clients" element={<Clients />} />
                 <Route path="/clients/:id" element={<ClientProfile />} />
                 <Route path="/staff" element={<Staff />} />
+                <Route path="/follow-ups" element={<FollowUps />} />
                 <Route path="/reports" element={<Reports />} />
                 <Route path="/services" element={<Services />} />
                 <Route path="/products" element={<Products />} />

@@ -404,7 +404,36 @@ export const defaultSettings = {
   defaultTaxPercent: 0,
   currencySymbol: '₹',
   upiId: '',
+  // Follow-up reminders
+  followUpEnabled: true,
+  followUpDays: 25,
+  followUpDefaultTemplateId: 'tpl_1',
+  followUpAutoEnabled: false,
+  followUpApiProvider: '',
+  followUpApiKey: '',
+  followUpSenderNumber: '',
 }
+
+export const seedTemplates = [
+  {
+    id: 'tpl_1',
+    name: 'We miss you',
+    body: "Hi {clientName}, it's been {daysSinceVisit} days since your last visit to {salonName}! We'd love to see you again for your {lastService}. Book your next appointment whenever suits you 💇",
+    isDefault: true,
+  },
+  {
+    id: 'tpl_2',
+    name: 'Comeback offer',
+    body: 'Hi {clientName}! It\u2019s time for your next {lastService} at {salonName}. Book this week and get 10% off your total bill. See you soon!',
+    isDefault: false,
+  },
+  {
+    id: 'tpl_3',
+    name: 'Simple reminder',
+    body: 'Hi {clientName}, just a friendly reminder from {salonName} — it\u2019s been a while since your last visit ({lastVisitDate}). We\u2019re here whenever you\u2019re ready for your next appointment!',
+    isDefault: false,
+  },
+]
 
 export const seedStaff = [
   { id: 'stf_1', name: 'Anjali Raj', role: 'Beautician Makeup Skin', phone: '+91 92636 14890', commissionPercent: 10, salary: 0, joinedAt: '2026-03-05', active: true },

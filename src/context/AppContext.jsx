@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react'
-import { seedServices, seedProducts, seedStaff, defaultSettings, defaultAuth } from '../data/seed.js'
+import { seedServices, seedProducts, seedStaff, seedTemplates, defaultSettings, defaultAuth } from '../data/seed.js'
 import { uid, buildInvoiceNumber } from '../utils/helpers.js'
 
 const AppContext = createContext(null)
@@ -30,6 +30,8 @@ const STORAGE_KEYS = {
   products: 'salon_products',
   staff: 'salon_staff',
   attendance: 'salon_attendance',
+  templates: 'salon_templates',
+  followUps: 'salon_followups',
   bills: 'salon_bills',
   settings: 'salon_settings',
 }
@@ -42,6 +44,8 @@ export function AppProvider({ children }) {
   const [products, setProducts] = useState(() => loadJSON(STORAGE_KEYS.products, seedProducts))
   const [staff, setStaff] = useState(() => loadJSON(STORAGE_KEYS.staff, seedStaff))
   const [attendance, setAttendance] = useState(() => loadJSON(STORAGE_KEYS.attendance, []))
+  const [templates, setTemplates] = useState(() => loadJSON(STORAGE_KEYS.templates, seedTemplates))
+  const [followUps, setFollowUps] = useState(() => loadJSON(STORAGE_KEYS.followUps, []))
   const [bills, setBills] = useState(() => loadJSON(STORAGE_KEYS.bills, []))
   const [settings, setSettings] = useState(() => loadJSON(STORAGE_KEYS.settings, defaultSettings))
 
@@ -52,6 +56,8 @@ export function AppProvider({ children }) {
   useEffect(() => saveJSON(STORAGE_KEYS.products, products), [products])
   useEffect(() => saveJSON(STORAGE_KEYS.staff, staff), [staff])
   useEffect(() => saveJSON(STORAGE_KEYS.attendance, attendance), [attendance])
+  useEffect(() => saveJSON(STORAGE_KEYS.templates, templates), [templates])
+  useEffect(() => saveJSON(STORAGE_KEYS.followUps, followUps), [followUps])
   useEffect(() => saveJSON(STORAGE_KEYS.bills, bills), [bills])
   useEffect(() => saveJSON(STORAGE_KEYS.settings, settings), [settings])
 
@@ -144,6 +150,35 @@ export function AppProvider({ children }) {
     setAttendance((prev) => prev.filter((a) => a.id !== id))
   }, [])
 
+  // ---- Message templates ----
+  const upsertTemplate = useCallback((template) => {
+    setTemplates((prev) => {
+      const isDefault = !!template.isDefault
+      const exists = prev.find((t) => t.id === template.id)
+      let next = exists ? prev.map((t) => (t.id === template.id ? { ...t, ...template } : t)) : [...prev, { id: uid('tpl'), ...template }]
+      // Only one default template at a time
+      if (isDefault) {
+        next = next.map((t) => (t.id === (template.id || next[next.length - 1].id) ? t : { ...t, isDefault: false }))
+      }
+      return next
+    })
+  }, [])
+
+  const deleteTemplate = useCallback((id) => {
+    setTemplates((prev) => prev.filter((t) => t.id !== id))
+  }, [])
+
+  // ---- Follow-up log ----
+  // One entry per contact attempt. Used to know who has already been
+  // reached out to since their last visit, so the due list doesn't nag twice.
+  const logFollowUp = useCallback((record) => {
+    setFollowUps((prev) => [{ id: uid('flw'), sentAt: new Date().toISOString(), ...record }, ...prev])
+  }, [])
+
+  const deleteFollowUp = useCallback((id) => {
+    setFollowUps((prev) => prev.filter((f) => f.id !== id))
+  }, [])
+
   // ---- Bills ----
   const createBill = useCallback(
     (billDraft) => {
@@ -202,10 +237,12 @@ export function AppProvider({ children }) {
       products,
       staff,
       attendance,
+      templates,
+      followUps,
       bills,
       settings,
     }
-  }, [clients, services, products, staff, attendance, bills, settings])
+  }, [clients, services, products, staff, attendance, templates, followUps, bills, settings])
 
   const restoreBackup = useCallback((data) => {
     if (data.clients) setClients(data.clients)
@@ -213,6 +250,8 @@ export function AppProvider({ children }) {
     if (data.products) setProducts(data.products)
     if (data.staff) setStaff(data.staff)
     if (data.attendance) setAttendance(data.attendance)
+    if (data.templates) setTemplates(data.templates)
+    if (data.followUps) setFollowUps(data.followUps)
     if (data.bills) setBills(data.bills)
     if (data.settings) setSettings(data.settings)
   }, [])
@@ -240,6 +279,12 @@ export function AppProvider({ children }) {
     attendance,
     markAttendance,
     deleteAttendance,
+    templates,
+    upsertTemplate,
+    deleteTemplate,
+    followUps,
+    logFollowUp,
+    deleteFollowUp,
     bills,
     createBill,
     deleteBill,

@@ -11,6 +11,7 @@ import {
   Package,
   Settings as SettingsIcon,
   Sparkles,
+  AlarmClock,
 } from 'lucide-react'
 
 const NAV_ITEMS = [
@@ -19,6 +20,7 @@ const NAV_ITEMS = [
   { to: '/history', label: 'Billing History', icon: History },
   { to: '/clients', label: 'Clients', icon: Users },
   { to: '/staff', label: 'Staff', icon: Users2 },
+  { to: '/follow-ups', label: 'Follow-ups', icon: AlarmClock },
   { to: '/reports', label: 'Reports', icon: BarChart3 },
   { to: '/services', label: 'Services', icon: Scissors },
   { to: '/products', label: 'Products', icon: Package },
