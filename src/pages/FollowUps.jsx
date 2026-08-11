@@ -296,7 +296,7 @@ function SendQueueModal({ open, onClose, clients, template, onDone }) {
               <SkipForward size={15} /> Skip
             </button>
             <button onClick={handleSend} className="btn-brass">
-              <Send size={15} /> Send & next <ArrowRight size={14} />
+              <Send size={15} /> Send Message
             </button>
           </div>
         </div>
