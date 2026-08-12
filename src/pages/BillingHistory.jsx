@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from 'react'
-import { Search, Eye, Printer, Download, ExternalLink , Trash2, Receipt, CalendarRange, X } from 'lucide-react'
+import { Search, Eye, Printer, Download, MessageCircle, Trash2, Receipt, CalendarRange, X, Pencil } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, Modal, EmptyState, Badge } from '../components/ui.jsx'
 import BillPreview from '../components/BillPreview.jsx'
+import EditBillModal from '../components/EditBillModal.jsx'
 import { formatCurrency, formatDateTime, isInRange, whatsappBillMessage, whatsappLink, getBillStaffNames } from '../utils/helpers.js'
 import { downloadBillPDF } from '../utils/pdf.js'
 
@@ -15,6 +16,7 @@ export default function BillingHistory() {
   const [endDate, setEndDate] = useState('')
   const [paymentFilter, setPaymentFilter] = useState('All')
   const [viewBill, setViewBill] = useState(null)
+  const [editBill, setEditBill] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(null)
 
   const filtered = useMemo(() => {
@@ -131,6 +133,9 @@ export default function BillingHistory() {
                         <button onClick={() => setViewBill(b)} className="p-1.5 text-muted hover:text-plum" title="View">
                           <Eye size={15} />
                         </button>
+                        <button onClick={() => setEditBill(b)} className="p-1.5 text-muted hover:text-plum" title="Edit">
+                          <Pencil size={15} />
+                        </button>
                         <button onClick={() => downloadBillPDF(b, settings)} className="p-1.5 text-muted hover:text-plum" title="Download PDF">
                           <Download size={15} />
                         </button>
@@ -142,7 +147,7 @@ export default function BillingHistory() {
                             className="p-1.5 text-muted hover:text-success"
                             title="Share on WhatsApp"
                           >
-                            <ExternalLink  size={15} />
+                            <MessageCircle size={15} />
                           </a>
                         )}
                         <button onClick={() => setConfirmDelete(b)} className="p-1.5 text-muted hover:text-danger" title="Delete">
@@ -172,6 +177,15 @@ export default function BillingHistory() {
               <button onClick={() => downloadBillPDF(viewBill, settings)} className="btn-ghost">
                 <Download size={15} /> Download PDF
               </button>
+              <button
+                onClick={() => {
+                  setEditBill(viewBill)
+                  setViewBill(null)
+                }}
+                className="btn-ghost"
+              >
+                <Pencil size={15} /> Edit bill
+              </button>
               {viewBill.client?.phone && (
                 <a
                   href={whatsappLink(viewBill.client.phone, whatsappBillMessage(settings, viewBill))}
@@ -179,13 +193,16 @@ export default function BillingHistory() {
                   rel="noreferrer"
                   className="btn-brass"
                 >
-                  <ExternalLink  size={15} /> Share on WhatsApp
+                  <MessageCircle size={15} /> Share on WhatsApp
                 </a>
               )}
             </div>
           </div>
         )}
       </Modal>
+
+      {/* Edit bill modal */}
+      {editBill && <EditBillModal bill={editBill} open={!!editBill} onClose={() => setEditBill(null)} />}
 
       {/* Delete confirm */}
       <Modal open={!!confirmDelete} onClose={() => setConfirmDelete(null)} title="Delete bill?" size="sm">

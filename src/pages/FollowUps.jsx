@@ -287,7 +287,7 @@ function SendQueueModal({ open, onClose, clients, template, onDone }) {
             Client {index + 1} of {clients.length} — WhatsApp opens one chat per click, so we'll walk through the list together.
           </p>
           <div className="p-4 rounded-lg bg-black/[0.02] border border-black/5 mb-4">
-            <p className="text-sm font-semibold text-ink">{client.name}</p>
+            <p className="text-sm capitalize font-semibold text-ink">{client.name}</p>
             <p className="text-xs text-muted mb-3">{client.phone}</p>
             <p className="text-sm text-ink whitespace-pre-wrap">{message}</p>
           </div>

@@ -223,6 +223,49 @@ export function AppProvider({ children }) {
     setBills((prev) => prev.filter((b) => b.id !== id))
   }, [])
 
+  // Edits an existing bill in place. Takes the full old bill (as currently
+  // displayed) plus a patch of changed fields, and reconciles the knock-on
+  // effects that createBill originally applied: product stock levels and the
+  // client's total-spent / visit-history record. Callers should recompute
+  // totals (subtotal, discountAmount, taxAmount, total, etc.) before calling
+  // this, the same way NewBill does via calcBillTotals.
+  const updateBill = useCallback((oldBill, patch) => {
+    const updatedBill = { ...oldBill, ...patch }
+
+    setBills((prev) => prev.map((b) => (b.id === oldBill.id ? updatedBill : b)))
+
+    // Reconcile product stock: give back what the old items took, then take
+    // what the new items need.
+    setProducts((prev) => {
+      let next = prev
+      oldBill.items.filter((it) => it.type === 'product').forEach((it) => {
+        next = next.map((p) => (p.id === it.refId ? { ...p, stock: p.stock + it.qty } : p))
+      })
+      updatedBill.items.filter((it) => it.type === 'product').forEach((it) => {
+        next = next.map((p) => (p.id === it.refId ? { ...p, stock: Math.max(0, p.stock - it.qty) } : p))
+      })
+      return next
+    })
+
+    // Reconcile the client's total spent and their matching visit entry
+    if (oldBill.client?.id) {
+      setClients((prev) =>
+        prev.map((c) => {
+          if (c.id !== oldBill.client.id) return c
+          const spentDelta = updatedBill.total - oldBill.total
+          const visits = (c.visits || []).map((v) =>
+            v.billId === oldBill.id
+              ? { ...v, date: updatedBill.date, total: updatedBill.total, items: updatedBill.items.map((i) => i.name) }
+              : v,
+          )
+          return { ...c, totalSpent: Math.max(0, (c.totalSpent || 0) + spentDelta), visits }
+        }),
+      )
+    }
+
+    return updatedBill
+  }, [])
+
   // ---- Settings ----
   const updateSettings = useCallback((patch) => {
     setSettings((prev) => ({ ...prev, ...patch }))
@@ -256,6 +299,16 @@ export function AppProvider({ children }) {
     if (data.settings) setSettings(data.settings)
   }, [])
 
+  // Reloads the built-in sample services & products (from src/data/seed.js).
+  // Useful when the browser's saved catalog is empty/stale and new sample
+  // items added to seed.js haven't shown up, since seed data only auto-loads
+  // on a brand-new browser with nothing saved yet. This does NOT touch
+  // clients, bills, staff, or settings.
+  const resetCatalogToDefaults = useCallback(() => {
+    setServices(seedServices)
+    setProducts(seedProducts)
+  }, [])
+
   const value = {
     isAuthed,
     login,
@@ -287,11 +340,13 @@ export function AppProvider({ children }) {
     deleteFollowUp,
     bills,
     createBill,
+    updateBill,
     deleteBill,
     settings,
     updateSettings,
     exportBackup,
     restoreBackup,
+    resetCatalogToDefaults,
   }
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>
