@@ -1,16 +1,17 @@
 import React, { useRef, useState } from 'react'
-import { CircleUserRound, ReceiptText, DatabaseBackup, KeyRound, Download, Upload, Check, Bell, Zap, TriangleAlert } from 'lucide-react'
+import { CircleUserRound, ReceiptText, DatabaseBackup, KeyRound, Download, Upload, Check, Bell, Zap, TriangleAlert, RotateCcw } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
-import { PageHeader } from '../components/ui.jsx'
+import { PageHeader, Modal } from '../components/ui.jsx'
 
 export default function Settings() {
-  const { settings, updateSettings, exportBackup, restoreBackup, auth, changeCredentials, templates } = useApp()
+  const { settings, updateSettings, exportBackup, restoreBackup, resetCatalogToDefaults, auth, changeCredentials, templates } = useApp()
   const [form, setForm] = useState(settings)
   const [savedFlash, setSavedFlash] = useState(false)
   const [credForm, setCredForm] = useState({ username: auth.username, password: '' })
   const [credSaved, setCredSaved] = useState(false)
   const fileInputRef = useRef(null)
   const [restoreMessage, setRestoreMessage] = useState('')
+  const [confirmResetCatalog, setConfirmResetCatalog] = useState(false)
 
   function handleSaveProfile() {
     updateSettings(form)
@@ -211,31 +212,47 @@ export default function Settings() {
             </label>
           </div>
 
-          <div className="flex items-start gap-2.5 p-3 rounded-lg bg-danger/5 text-xs text-ink mb-4">
-            <TriangleAlert size={15} className="text-danger mt-0.5 shrink-0" />
+          <div className="flex items-start gap-2.5 p-3 rounded-lg bg-plum/5 text-xs text-ink mb-4">
+            <TriangleAlert size={15} className="text-plum mt-0.5 shrink-0" />
             <p>
-              This app runs entirely in your browser with no server, so it can't send messages on a schedule by itself or store an
-              API key securely. The fields below just save your intended setup — to actually send automatically you'll need a small
-              backend (e.g. a scheduled cloud function) connected to a WhatsApp Business API provider, which reads these settings and
-              triggers the sends. Until that's connected, use the manual send queue on the Follow-ups page.
+              This app runs in your browser, so it can't hold API credentials securely or run on its own schedule — that part needs a
+              small backend you control. Once you have one (see the guide on the Follow-ups page), point{' '}
+              <span className="font-medium">Webhook URL</span> at it below and turn this on. From then on, Follow-ups sends messages
+              by calling that URL instead of opening WhatsApp manually — including a genuine one-click "send to all due" button.
+              Leave this off (default) to keep using the manual WhatsApp send queue.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="label">Webhook / API endpoint URL</label>
+            <input
+              className="input"
+              placeholder="https://your-backend.example.com/api/send-followup"
+              value={form.followUpWebhookUrl}
+              onChange={(e) => setForm((s) => ({ ...s, followUpWebhookUrl: e.target.value }))}
+              disabled={!form.followUpAutoEnabled}
+            />
+            <p className="text-xs text-muted mt-1.5">
+              For each message, this app sends a POST request here with <span className="font-mono">{'{ phone, name, message }'}</span>{' '}
+              as JSON. Your backend receives it and calls the WhatsApp API. It must accept cross-origin requests from this site.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
             <div>
-              <label className="label">API provider</label>
+              <label className="label">API provider (reference only)</label>
               <select
                 className="input"
                 value={form.followUpApiProvider}
                 onChange={(e) => setForm((s) => ({ ...s, followUpApiProvider: e.target.value }))}
                 disabled={!form.followUpAutoEnabled}
               >
-                <option value="">Not connected</option>
+                <option value="">Not set</option>
                 <option value="whatsapp_cloud">WhatsApp Cloud API (Meta)</option>
                 <option value="twilio">Twilio</option>
                 <option value="aisensy">AiSensy</option>
                 <option value="gupshup">Gupshup</option>
-                <option value="other">Other / custom webhook</option>
+                <option value="other">Other / custom</option>
               </select>
             </div>
             <div>
@@ -249,17 +266,10 @@ export default function Settings() {
               />
             </div>
           </div>
-          <div className="mt-3">
-            <label className="label">API key / token</label>
-            <input
-              className="input"
-              type="password"
-              placeholder="Stored locally in this browser only"
-              value={form.followUpApiKey}
-              onChange={(e) => setForm((s) => ({ ...s, followUpApiKey: e.target.value }))}
-              disabled={!form.followUpAutoEnabled}
-            />
-          </div>
+          <p className="text-xs text-muted mt-2">
+            Provider and sender number are just labels for your own reference — the actual API key lives on your backend, never in
+            this browser.
+          </p>
         </div>
       </section>
 
@@ -330,6 +340,29 @@ export default function Settings() {
           </div>
         </section>
       </div>
+
+      <Modal open={confirmResetCatalog} onClose={() => setConfirmResetCatalog(false)} title="Reset services & products?" size="sm">
+        <div>
+          <p className="text-sm text-muted mb-5">
+            This replaces your current services and products list with the app's built-in sample catalog. Your clients, bills, staff,
+            and settings are not affected. This can't be undone.
+          </p>
+          <div className="flex items-center gap-2 justify-end">
+            <button onClick={() => setConfirmResetCatalog(false)} className="btn-ghost">
+              Cancel
+            </button>
+            <button
+              onClick={() => {
+                resetCatalogToDefaults()
+                setConfirmResetCatalog(false)
+              }}
+              className="btn-danger"
+            >
+              Reset catalog
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

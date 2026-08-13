@@ -13,7 +13,7 @@ import {
   Package,
   Printer,
   Download,
-  ExternalLink,
+  MessageCircle,
   ReceiptText,
   Check,
 } from 'lucide-react'
@@ -46,6 +46,7 @@ export default function NewBill() {
   const [discountValue, setDiscountValue] = useState('')
   const [taxPercent, setTaxPercent] = useState(settings.defaultTaxPercent || 0)
   const [paymentMethod, setPaymentMethod] = useState('Cash')
+  const [billDate, setBillDate] = useState(() => new Date().toISOString().slice(0, 10))
 
   const [generatedBill, setGeneratedBill] = useState(null)
 
@@ -125,10 +126,15 @@ export default function NewBill() {
     if (cart.length === 0) return
     const client = resolveClient()
     const staffList = Array.from(new Map(cart.filter((c) => c.staffId).map((c) => [c.staffId, { id: c.staffId, name: c.staffName }])).values())
+    // Keep the current time-of-day, just apply whichever calendar date was chosen
+    const dateObj = new Date()
+    const [y, m, d] = billDate.split('-').map(Number)
+    dateObj.setFullYear(y, m - 1, d)
     const bill = createBill({
       client: client ? { id: client.id, name: client.name, phone: client.phone } : { name: 'Walk-in Customer' },
       staffList,
       items: cart,
+      date: dateObj.toISOString(),
       discountType,
       discountValue: Number(discountValue) || 0,
       taxPercent: Number(taxPercent) || 0,
@@ -147,6 +153,7 @@ export default function NewBill() {
     setDiscountType('none')
     setDiscountValue('')
     setPaymentMethod('Cash')
+    setBillDate(new Date().toISOString().slice(0, 10))
     setGeneratedBill(null)
   }
 
@@ -325,7 +332,19 @@ export default function NewBill() {
         {/* Cart / Summary */}
         <div className="lg:sticky lg:top-20 h-fit space-y-4">
           <section className="card p-5 sm:p-6">
-            <p className="font-display text-lg text-ink mb-2">Bill summary</p>
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <p className="font-display text-lg text-ink">Bill summary</p>
+              <div className="shrink-0">
+                <input
+                  type="date"
+                  value={billDate}
+                  max={new Date().toISOString().slice(0, 10)}
+                  onChange={(e) => setBillDate(e.target.value)}
+                  className="rounded-lg border border-black/10 bg-white px-2.5 py-1.5 text-xs text-ink focus:outline-none focus:ring-2 focus:ring-brass/60 focus:border-brass"
+                  title="Bill date"
+                />
+              </div>
+            </div>
 
             {activeStaff.length === 0 && (
               <p className="text-xs text-danger mb-4 p-2.5 rounded-lg bg-danger/5">
@@ -334,13 +353,13 @@ export default function NewBill() {
             )}
 
             {cart.length === 0 ? (
-              <p className="text-sm text-muted py-6 text-center">Add services or products to build the bill.</p>
+              <p className="text-sm text-muted py-4 text-center">Add services or products to build the bill.</p>
             ) : (
               <div className="space-y-4 mb-4 max-h-72 overflow-y-auto pr-1">
                 {cart.map((c) => {
                   const line = calcLineTotal(c)
                   return (
-                    <div key={`${c.type}-${c.refId}`} className="pb-3 border-b border-black/5 last:border-0 last:pb-0">
+                    <div key={`${c.type}-${c.refId}`} className="pb-4 border-b border-black/5 last:border-0 last:pb-0">
                       <div className="flex items-center gap-2">
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-medium text-ink truncate">{c.name}</p>
@@ -372,8 +391,7 @@ export default function NewBill() {
                         <select
                           value={c.staffId}
                           onChange={(e) => updateItemStaff(c.refId, c.type, e.target.value)}
-                          className={`w-full rounded-md border p-2 text-xs focus:outline-none
-                          }`}
+                          className={`w-full rounded-md border px-2 py-1.5 text-xs focus:outline-none`}
                         >
                           <option value="">Assign staff…</option>
                           {activeStaff.map((s) => (
@@ -383,7 +401,7 @@ export default function NewBill() {
                           ))}
                         </select>
                       </div>
-                      <div className="flex items-center justify-between gap-2 mt-1.5">
+                      <div className="flex items-center justify-between gap-2 mt-2">
                         <div className="flex items-center gap-1.5">
                           <label className="text-[11px] text-muted">Item discount</label>
                           <input
@@ -518,7 +536,7 @@ export default function NewBill() {
                   rel="noreferrer"
                   className="btn-brass"
                 >
-                  <ExternalLink size={15} /> Share on WhatsApp
+                  <MessageCircle size={15} /> Share on WhatsApp
                 </a>
               )}
               <button onClick={resetForm} className="btn-primary ml-auto">

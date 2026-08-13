@@ -13,6 +13,8 @@ import {
   Wallet,
   Percent,
   Download,
+  Scissors,
+  Package,
 } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, Modal, EmptyState, Badge } from '../components/ui.jsx'
@@ -46,7 +48,7 @@ export default function Staff() {
     const today = new Date()
 
     function ensure(id) {
-      if (!map[id]) map[id] = { count: 0, revenue: 0, monthCount: 0, monthRevenue: 0 }
+      if (!map[id]) map[id] = { count: 0, revenue: 0, monthServiceRevenue: 0, monthProductRevenue: 0 }
       return map[id]
     }
 
@@ -61,18 +63,18 @@ export default function Staff() {
           entry.count += 1
           entry.revenue += line.net
           if (inMonth) {
-            entry.monthCount += 1
-            entry.monthRevenue += line.net
+            if (it.type === 'product') entry.monthProductRevenue += line.net
+            else entry.monthServiceRevenue += line.net
           }
         })
       } else if (b.staff?.id) {
-        // Legacy bills created before per-item staff assignment existed
+        // Legacy bills created before per-item staff assignment existed —
+        // no per-item type breakdown available, so count it all as services.
         const entry = ensure(b.staff.id)
         entry.count += 1
         entry.revenue += b.total
         if (inMonth) {
-          entry.monthCount += 1
-          entry.monthRevenue += b.total
+          entry.monthServiceRevenue += b.total
         }
       }
     })
@@ -176,7 +178,7 @@ export default function Staff() {
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
               {filtered.map((s) => {
-                const stats = statsByStaff[s.id] || { count: 0, revenue: 0, monthCount: 0, monthRevenue: 0 }
+                const stats = statsByStaff[s.id] || { count: 0, revenue: 0, monthServiceRevenue: 0, monthProductRevenue: 0 }
                 return (
                   <div key={s.id} className={`card p-5 flex flex-col ${!s.active ? 'opacity-60' : ''}`}>
                     <div className="flex items-start justify-between mb-3">
@@ -210,18 +212,18 @@ export default function Staff() {
                       </div>
                       <div className="bg-black/[0.02] rounded-lg p-2.5">
                         <p className="text-muted mb-0.5 flex items-center gap-1">
-                          <Percent size={11} /> Lifetime commission
+                          Service commission
                         </p>
                         <p className="font-semibold text-ink tabular">
-                          {formatCurrency((stats.revenue * (s.commissionPercent || 0)) / 100, settings.currencySymbol)}
+                          {formatCurrency((stats.monthServiceRevenue * (s.commissionPercent || 0)) / 100, settings.currencySymbol)}
                         </p>
                       </div>
                       <div className="bg-black/[0.02] rounded-lg p-2.5">
                         <p className="text-muted mb-0.5 flex items-center gap-1">
-                          <Percent size={11} /> Monthly commission
+                          Product commission
                         </p>
                         <p className="font-semibold text-ink tabular">
-                          {formatCurrency((stats.monthRevenue * (s.commissionPercent || 0)) / 100, settings.currencySymbol)}
+                          {formatCurrency((stats.monthProductRevenue * (s.commissionPercent || 0)) / 100, settings.currencySymbol)}
                         </p>
                       </div>
                       <div className="bg-black/[0.02] rounded-lg p-2.5">

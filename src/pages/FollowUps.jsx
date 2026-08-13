@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  AlarmClock,
+  Bell,
   MessageSquareText,
   Search,
   Send,
@@ -14,13 +14,27 @@ import {
   Info,
   ArrowRight,
   SkipForward,
+  Zap,
+  Loader2,
+  CircleCheck,
+  CircleX,
 } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, Modal, EmptyState, Badge } from '../components/ui.jsx'
 import { formatDate, daysSince, buildFollowUpMessage, whatsappLink, uid } from '../utils/helpers.js'
 
+async function sendViaWebhook(url, payload) {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) throw new Error(`Server responded with ${res.status}`)
+  return true
+}
+
 const TABS = [
-  { id: 'due', label: 'Due for follow-up', icon: AlarmClock },
+  { id: 'due', label: 'Due for follow-up', icon: Bell },
   { id: 'templates', label: 'Templates', icon: MessageSquareText },
 ]
 
@@ -92,8 +106,11 @@ function DueTab({ dueClients }) {
   const [templateId, setTemplateId] = useState(settings.followUpDefaultTemplateId || templates[0]?.id || '')
   const [selected, setSelected] = useState(new Set())
   const [queueOpen, setQueueOpen] = useState(false)
+  const [sendingId, setSendingId] = useState(null)
+  const [bulkState, setBulkState] = useState(null) // { total, done, failed }
 
   const template = templates.find((t) => t.id === templateId) || templates[0]
+  const isAutoMode = settings.followUpAutoEnabled && !!settings.followUpWebhookUrl
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase()
@@ -112,11 +129,24 @@ function DueTab({ dueClients }) {
     setSelected((prev) => (prev.size === filtered.length ? new Set() : new Set(filtered.map((c) => c.id))))
   }
 
-  function sendOne(client) {
+  async function sendOne(client) {
     if (!template) return
     const message = buildFollowUpMessage(template, client, settings)
-    window.open(whatsappLink(client.phone, message), '_blank', 'noopener,noreferrer')
-    logFollowUp({ clientId: client.id, templateId: template.id, templateName: template.name, message, method: 'whatsapp' })
+
+    if (isAutoMode) {
+      setSendingId(client.id)
+      try {
+        await sendViaWebhook(settings.followUpWebhookUrl, { phone: client.phone, name: client.name, message })
+        logFollowUp({ clientId: client.id, templateId: template.id, templateName: template.name, message, method: 'api' })
+      } catch (err) {
+        alert(`Couldn't send to ${client.name}: ${err.message}`)
+      } finally {
+        setSendingId(null)
+      }
+    } else {
+      window.open(whatsappLink(client.phone, message), '_blank', 'noopener,noreferrer')
+      logFollowUp({ clientId: client.id, templateId: template.id, templateName: template.name, message, method: 'whatsapp' })
+    }
   }
 
   function markContacted(client) {
@@ -125,10 +155,37 @@ function DueTab({ dueClients }) {
     logFollowUp({ clientId: client.id, templateId: template.id, templateName: template.name, message, method: 'manual' })
   }
 
+  async function sendBulk(targets) {
+    if (!template || targets.length === 0) return
+    setBulkState({ total: targets.length, done: 0, failed: 0 })
+    for (const client of targets) {
+      const message = buildFollowUpMessage(template, client, settings)
+      try {
+        await sendViaWebhook(settings.followUpWebhookUrl, { phone: client.phone, name: client.name, message })
+        logFollowUp({ clientId: client.id, templateId: template.id, templateName: template.name, message, method: 'api' })
+        setBulkState((s) => ({ ...s, done: s.done + 1 }))
+      } catch {
+        setBulkState((s) => ({ ...s, done: s.done + 1, failed: s.failed + 1 }))
+      }
+      // Small gap between calls so a slow backend or rate limit isn't hammered
+      await new Promise((r) => setTimeout(r, 250))
+    }
+    setSelected(new Set())
+  }
+
+  function handleSendSelected() {
+    const targets = filtered.filter((c) => selected.has(c.id))
+    if (isAutoMode) {
+      sendBulk(targets)
+    } else {
+      setQueueOpen(true)
+    }
+  }
+
   if (!settings.followUpEnabled) {
     return (
       <EmptyState
-        icon={AlarmClock}
+        icon={Bell}
         title="Follow-up reminders are turned off"
         subtitle="Enable them in Settings and set how many days after a client's last visit they should be flagged for a follow-up."
         action={
@@ -152,6 +209,55 @@ function DueTab({ dueClients }) {
 
   return (
     <div className="space-y-4">
+      {settings.followUpAutoEnabled && !settings.followUpWebhookUrl && (
+        <div className="card p-4 flex items-start gap-2.5 bg-danger/5 border-danger/15">
+          <Info size={15} className="text-danger mt-0.5 shrink-0" />
+          <p className="text-xs text-ink">
+            Automatic sending is turned on in Settings, but no webhook URL is set yet — sends below will use manual WhatsApp for now.
+            Add a webhook URL in <span className="font-medium">Settings → Follow-up reminders</span> to switch this on.
+          </p>
+        </div>
+      )}
+
+      {isAutoMode && (
+        <div className="card p-4 flex items-center gap-2.5 bg-brass/10 border-brass/20">
+          <Zap size={15} className="text-brass-dark shrink-0" />
+          <p className="text-xs text-ink">
+            Automatic sending is on — messages go out through your connected API instead of opening WhatsApp.
+          </p>
+        </div>
+      )}
+
+      {bulkState && (
+        <div className="card p-4">
+          <div className="flex items-center justify-between mb-2 text-sm">
+            <span className="font-medium text-ink flex items-center gap-2">
+              {bulkState.done < bulkState.total ? (
+                <>
+                  <Loader2 size={15} className="animate-spin text-plum" /> Sending {bulkState.done} of {bulkState.total}…
+                </>
+              ) : (
+                <>
+                  <CheckCheck size={15} className="text-success" /> Done — {bulkState.done - bulkState.failed} sent
+                  {bulkState.failed > 0 && `, ${bulkState.failed} failed`}
+                </>
+              )}
+            </span>
+            {bulkState.done >= bulkState.total && (
+              <button onClick={() => setBulkState(null)} className="text-xs text-muted hover:text-ink underline">
+                Dismiss
+              </button>
+            )}
+          </div>
+          <div className="h-1.5 bg-black/5 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-plum rounded-full transition-all"
+              style={{ width: `${(bulkState.done / bulkState.total) * 100}%` }}
+            />
+          </div>
+        </div>
+      )}
+
       <div className="card p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-3">
         <div className="relative flex-1">
           <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
@@ -164,13 +270,18 @@ function DueTab({ dueClients }) {
             </option>
           ))}
         </select>
-        <button
-          onClick={() => setQueueOpen(true)}
-          disabled={selected.size === 0}
-          className="btn-brass shrink-0"
-        >
+        <button onClick={handleSendSelected} disabled={selected.size === 0} className="btn-brass shrink-0">
           <Send size={15} /> Send to selected ({selected.size})
         </button>
+        {isAutoMode && (
+          <button
+            onClick={() => sendBulk(filtered)}
+            disabled={filtered.length === 0 || (bulkState && bulkState.done < bulkState.total)}
+            className="btn-primary shrink-0"
+          >
+            <Zap size={15} /> Send to all due now
+          </button>
+        )}
       </div>
 
       {filtered.length === 0 ? (
@@ -219,8 +330,15 @@ function DueTab({ dueClients }) {
                     <button onClick={() => markContacted(c)} className="btn-ghost text-xs py-1.5">
                       Mark contacted
                     </button>
-                    <button onClick={() => sendOne(c)} className="btn-brass text-xs py-1.5">
-                      <Send size={13} /> WhatsApp
+                    <button onClick={() => sendOne(c)} disabled={sendingId === c.id} className="btn-brass text-xs py-1.5">
+                      {sendingId === c.id ? (
+                        <Loader2 size={13} className="animate-spin" />
+                      ) : isAutoMode ? (
+                        <Zap size={13} />
+                      ) : (
+                        <Send size={13} />
+                      )}
+                      {isAutoMode ? 'Send' : 'WhatsApp'}
                     </button>
                   </div>
                 </div>
@@ -287,7 +405,7 @@ function SendQueueModal({ open, onClose, clients, template, onDone }) {
             Client {index + 1} of {clients.length} — WhatsApp opens one chat per click, so we'll walk through the list together.
           </p>
           <div className="p-4 rounded-lg bg-black/[0.02] border border-black/5 mb-4">
-            <p className="text-sm capitalize font-semibold text-ink">{client.name}</p>
+            <p className="text-sm font-semibold text-ink">{client.name}</p>
             <p className="text-xs text-muted mb-3">{client.phone}</p>
             <p className="text-sm text-ink whitespace-pre-wrap">{message}</p>
           </div>
@@ -296,7 +414,7 @@ function SendQueueModal({ open, onClose, clients, template, onDone }) {
               <SkipForward size={15} /> Skip
             </button>
             <button onClick={handleSend} className="btn-brass">
-              <Send size={15} /> Send Message
+              <Send size={15} /> Send &amp; next <ArrowRight size={14} />
             </button>
           </div>
         </div>
