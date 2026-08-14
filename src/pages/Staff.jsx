@@ -18,10 +18,18 @@ import {
 } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, Modal, EmptyState, Badge } from '../components/ui.jsx'
-import { formatCurrency, formatDate, uid, isSameMonth, calcLineTotal } from '../utils/helpers.js'
+import { formatCurrency, formatDate, uid, isSameMonth, calcBillItemRevenue } from '../utils/helpers.js'
 import { downloadAttendanceExcel } from '../utils/excel.js'
 
-const emptyForm = { name: '', role: '', phone: '', commissionPercent: '10', salary: '', joinedAt: '' }
+const emptyForm = {
+  name: '',
+  role: '',
+  phone: '',
+  serviceCommissionPercent: '10',
+  productCommissionPercent: '10',
+  salary: '',
+  joinedAt: '',
+}
 const STATUS_OPTIONS = ['Present', 'Absent', 'Half Day', 'Leave']
 const STATUS_TONE = { Present: 'success', Absent: 'danger', 'Half Day': 'brass', Leave: 'muted' }
 
@@ -54,17 +62,24 @@ export default function Staff() {
 
     bills.forEach((b) => {
       const inMonth = isSameMonth(b.date, today)
-      const itemsWithStaff = b.items?.filter((it) => it.staffId) || []
+      const hasStaffedItems = b.items?.some((it) => it.staffId)
 
-      if (itemsWithStaff.length > 0) {
-        itemsWithStaff.forEach((it) => {
-          const line = calcLineTotal(it)
+      if (hasStaffedItems) {
+        // Each item's revenue already has its own item-level discount removed,
+        // AND its fair share of any flat/whole-bill discount removed too — so
+        // a bill-level discount is never invisible to staff numbers, and with
+        // multiple staff on one bill it's spread across everyone proportionally
+        // to what they actually did, not dumped on a single person.
+        const effectiveRevenues = calcBillItemRevenue(b)
+        b.items.forEach((it, idx) => {
+          if (!it.staffId) return
+          const revenue = effectiveRevenues[idx]
           const entry = ensure(it.staffId)
           entry.count += 1
-          entry.revenue += line.net
+          entry.revenue += revenue
           if (inMonth) {
-            if (it.type === 'product') entry.monthProductRevenue += line.net
-            else entry.monthServiceRevenue += line.net
+            if (it.type === 'product') entry.monthProductRevenue += revenue
+            else entry.monthServiceRevenue += revenue
           }
         })
       } else if (b.staff?.id) {
@@ -98,7 +113,10 @@ export default function Staff() {
       name: s.name,
       role: s.role || '',
       phone: s.phone || '',
-      commissionPercent: s.commissionPercent ?? '10',
+      // Fall back to the old single `commissionPercent` field for staff
+      // saved before service/product commissions were split out.
+      serviceCommissionPercent: s.serviceCommissionPercent ?? s.commissionPercent ?? '10',
+      productCommissionPercent: s.productCommissionPercent ?? s.commissionPercent ?? '10',
       salary: s.salary ?? '',
       joinedAt: s.joinedAt || '',
     })
@@ -113,7 +131,8 @@ export default function Staff() {
       name: form.name,
       role: form.role || 'Staff',
       phone: form.phone,
-      commissionPercent: Number(form.commissionPercent) || 0,
+      serviceCommissionPercent: Number(form.serviceCommissionPercent) || 0,
+      productCommissionPercent: Number(form.productCommissionPercent) || 0,
       salary: Number(form.salary) || 0,
       joinedAt: form.joinedAt || todayISO(),
       active: editingId ? staff.find((s) => s.id === editingId)?.active ?? true : true,
@@ -198,7 +217,12 @@ export default function Staff() {
 
                     <div className="flex items-center gap-2 mb-3 flex-wrap">
                       <Badge tone="brass">{s.role}</Badge>
-                      <span className="text-xs text-muted">{s.commissionPercent}% commission</span>
+                      <span className="text-xs text-muted flex items-center gap-1">
+                        <Scissors size={11} /> {s.serviceCommissionPercent ?? s.commissionPercent ?? 0}%
+                      </span>
+                      <span className="text-xs text-muted flex items-center gap-1">
+                        <Package size={11} /> {s.productCommissionPercent ?? s.commissionPercent ?? 0}%
+                      </span>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2 mb-2 text-xs">
@@ -207,23 +231,41 @@ export default function Staff() {
                         <p className="font-semibold text-ink tabular">{stats.count}</p>
                       </div>
                       <div className="bg-black/[0.02] rounded-lg p-2.5">
-                        <p className="text-muted mb-0.5">Revenue generated</p>
+                        <p className="text-muted mb-0.5">Lifetime revenue</p>
                         <p className="font-semibold text-ink tabular">{formatCurrency(stats.revenue, settings.currencySymbol)}</p>
                       </div>
                       <div className="bg-black/[0.02] rounded-lg p-2.5">
                         <p className="text-muted mb-0.5 flex items-center gap-1">
-                          Service commission
+                          <Scissors size={11} /> Service revenue
+                        </p>
+                        <p className="font-semibold text-ink tabular">{formatCurrency(stats.monthServiceRevenue, settings.currencySymbol)}</p>
+                      </div>
+                      <div className="bg-black/[0.02] rounded-lg p-2.5">
+                        <p className="text-muted mb-0.5 flex items-center gap-1">
+                          <Package size={11} /> Product revenue
+                        </p>
+                        <p className="font-semibold text-ink tabular">{formatCurrency(stats.monthProductRevenue, settings.currencySymbol)}</p>
+                      </div>
+                      <div className="bg-black/[0.02] rounded-lg p-2.5">
+                        <p className="text-muted mb-0.5 flex items-center gap-1">
+                          <Scissors size={11} /> Service commission
                         </p>
                         <p className="font-semibold text-ink tabular">
-                          {formatCurrency((stats.monthServiceRevenue * (s.commissionPercent || 0)) / 100, settings.currencySymbol)}
+                          {formatCurrency(
+                            (stats.monthServiceRevenue * (s.serviceCommissionPercent ?? s.commissionPercent ?? 0)) / 100,
+                            settings.currencySymbol,
+                          )}
                         </p>
                       </div>
                       <div className="bg-black/[0.02] rounded-lg p-2.5">
                         <p className="text-muted mb-0.5 flex items-center gap-1">
-                          Product commission
+                          <Package size={11} /> Product commission
                         </p>
                         <p className="font-semibold text-ink tabular">
-                          {formatCurrency((stats.monthProductRevenue * (s.commissionPercent || 0)) / 100, settings.currencySymbol)}
+                          {formatCurrency(
+                            (stats.monthProductRevenue * (s.productCommissionPercent ?? s.commissionPercent ?? 0)) / 100,
+                            settings.currencySymbol,
+                          )}
                         </p>
                       </div>
                       <div className="bg-black/[0.02] rounded-lg p-2.5">
@@ -284,26 +326,41 @@ export default function Staff() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="label">Commission %</label>
+              <label className="label flex items-center gap-1.5">
+                <Scissors size={12} /> Service commission %
+              </label>
               <input
                 className="input"
                 type="number"
                 min="0"
                 max="100"
-                value={form.commissionPercent}
-                onChange={(e) => setForm((s) => ({ ...s, commissionPercent: e.target.value }))}
+                value={form.serviceCommissionPercent}
+                onChange={(e) => setForm((s) => ({ ...s, serviceCommissionPercent: e.target.value }))}
               />
             </div>
             <div>
-              <label className="label">Monthly salary ({settings.currencySymbol})</label>
+              <label className="label flex items-center gap-1.5">
+                <Package size={12} /> Product commission %
+              </label>
               <input
                 className="input"
                 type="number"
                 min="0"
-                value={form.salary}
-                onChange={(e) => setForm((s) => ({ ...s, salary: e.target.value }))}
+                max="100"
+                value={form.productCommissionPercent}
+                onChange={(e) => setForm((s) => ({ ...s, productCommissionPercent: e.target.value }))}
               />
             </div>
+          </div>
+          <div>
+            <label className="label">Monthly salary ({settings.currencySymbol})</label>
+            <input
+              className="input"
+              type="number"
+              min="0"
+              value={form.salary}
+              onChange={(e) => setForm((s) => ({ ...s, salary: e.target.value }))}
+            />
           </div>
           <div>
             <label className="label">Joining date</label>

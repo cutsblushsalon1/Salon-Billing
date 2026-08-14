@@ -46,6 +46,15 @@ export function buildInvoiceNumber(prefix, counter) {
 }
 
 export function whatsappBillMessage(settings, bill) {
+  const itemLines = bill.items.flatMap((it) => {
+    const line = calcLineTotal(it)
+    const base = `* ${it.name} x${it.qty} - ${formatCurrency(line.gross, settings.currencySymbol)}`
+    if (line.discount > 0) {
+      return [base, `   ↳ ${it.discountPercent}% off - ${formatCurrency(line.net, settings.currencySymbol)}`]
+    }
+    return [base]
+  })
+
   const lines = [
     `*${settings.salonName}*`,
     ``,
@@ -55,45 +64,19 @@ export function whatsappBillMessage(settings, bill) {
     ``,
 
     `*SERVICES*`,
-
-    ...bill.items.map(
-      (it) =>
-        `* ${it.name} x${it.qty} - ${formatCurrency(
-          it.price * it.qty,
-          settings.currencySymbol
-        )}`
-    ),
-
+    ...itemLines,
     ``,
 
-    `Subtotal: ${formatCurrency(
-      bill.subtotal,
-      settings.currencySymbol
-    )}`,
-
-    bill.discountAmount
-      ? `Discount: -${formatCurrency(
-          bill.discountAmount,
-          settings.currencySymbol
-        )}`
-      : null,
-
-    bill.taxAmount
-      ? `Tax (${bill.taxPercent}%): ${formatCurrency(
-          bill.taxAmount,
-          settings.currencySymbol
-        )}`
-      : null,
-
+    `Subtotal: ${formatCurrency(bill.grossSubtotal ?? bill.subtotal, settings.currencySymbol)}`,
+    bill.itemDiscountTotal ? `Item discounts: -${formatCurrency(bill.itemDiscountTotal, settings.currencySymbol)}` : null,
+    bill.discountAmount ? `Discount: -${formatCurrency(bill.discountAmount, settings.currencySymbol)}` : null,
+    bill.taxAmount ? `Tax (${bill.taxPercent}%): ${formatCurrency(bill.taxAmount, settings.currencySymbol)}` : null,
     ``,
 
-    `*Total: ${formatCurrency(
-      bill.total,
-      settings.currencySymbol
-    )}*`,
+    `*Total: ${formatCurrency(bill.total, settings.currencySymbol)}*`,
+    ``,
 
     `Paid via: ${bill.paymentMethod}`,
-
     ``,
 
     settings.invoiceFooter ||
@@ -108,10 +91,8 @@ export function whatsappBillMessage(settings, bill) {
     `Leave us a Google Review:`,
     `https://maps.app.goo.gl/B6WfRGDBtWYnpk9e8`,
   ].filter((line) => line !== null && line !== undefined);
-
-  return lines.join("\n");
+  return lines.join('\n')
 }
-
 
 export function whatsappLink(phone, message) {
   const cleanPhone = (phone || '').replace(/[^0-9]/g, '')
@@ -167,6 +148,15 @@ export function calcLineTotal(item) {
   const discountPercent = Number(item.discountPercent) || 0
   const discount = gross * (discountPercent / 100)
   return { gross, discount, net: gross - discount }
+}
+
+export function calcBillItemRevenue(bill) {
+  const items = bill.items || []
+  const nets = items.map((it) => calcLineTotal(it).net)
+  const subtotal = nets.reduce((sum, n) => sum + n, 0)
+  const discountAmount = Number(bill.discountAmount) || 0
+  const ratio = subtotal > 0 ? Math.min(1, discountAmount / subtotal) : 0
+  return nets.map((n) => Math.round(n * (1 - ratio) * 100) / 100)
 }
 
 export function calcBillTotals({ items, discountType, discountValue, taxPercent }) {

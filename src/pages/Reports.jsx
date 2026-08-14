@@ -15,7 +15,7 @@ import {
 import { CalendarRange, TrendingUp, Users, Users2, Scissors, CreditCard, X } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, StatCard, EmptyState } from '../components/ui.jsx'
-import { formatCurrency, formatDate, isInRange, isSameMonth, calcLineTotal, getBillStaffNames } from '../utils/helpers.js'
+import { formatCurrency, formatDate, isInRange, isSameMonth, calcBillItemRevenue, getBillStaffNames } from '../utils/helpers.js'
 
 const TABS = [
   { id: 'revenue', label: 'Revenue', icon: TrendingUp },
@@ -64,28 +64,32 @@ export default function Reports() {
 
   const serviceStats = useMemo(() => {
     const map = {}
-    scopedBills.forEach((b) =>
-      b.items
-        .filter((i) => i.type === 'service')
-        .forEach((i) => {
-          if (!map[i.name]) map[i.name] = { name: i.name, count: 0, revenue: 0 }
-          map[i.name].count += i.qty
-          map[i.name].revenue += i.price * i.qty
-        }),
-    )
+    scopedBills.forEach((b) => {
+      const effectiveRevenues = calcBillItemRevenue(b)
+      b.items.forEach((it, idx) => {
+        if (it.type !== 'service') return
+        if (!map[it.name]) map[it.name] = { name: it.name, count: 0, revenue: 0 }
+        map[it.name].count += it.qty
+        map[it.name].revenue += effectiveRevenues[idx]
+      })
+    })
     return Object.values(map).sort((a, b) => b.revenue - a.revenue).slice(0, 10)
   }, [scopedBills])
 
   const staffStats = useMemo(() => {
     const map = {}
     scopedBills.forEach((b) => {
-      const itemsWithStaff = b.items?.filter((it) => it.staffName) || []
-      if (itemsWithStaff.length > 0) {
-        itemsWithStaff.forEach((it) => {
-          const line = calcLineTotal(it)
+      const hasStaffedItems = b.items?.some((it) => it.staffName)
+      if (hasStaffedItems) {
+        // Effective revenue already has item-level AND whole-bill discounts
+        // proportionally removed, so multi-staff bills split fairly.
+        const effectiveRevenues = calcBillItemRevenue(b)
+        b.items.forEach((it, idx) => {
+          if (!it.staffName) return
+          const revenue = effectiveRevenues[idx]
           if (!map[it.staffName]) map[it.staffName] = { name: it.staffName, count: 0, revenue: 0 }
           map[it.staffName].count += 1
-          map[it.staffName].revenue += line.net
+          map[it.staffName].revenue += revenue
         })
       } else {
         // Legacy bills created before per-item staff assignment existed
