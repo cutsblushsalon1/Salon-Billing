@@ -13,6 +13,7 @@ import FollowUps from './pages/FollowUps.jsx'
 import Reports from './pages/Reports.jsx'
 import Services from './pages/Services.jsx'
 import Products from './pages/Products.jsx'
+import Memberships from './pages/Memberships.jsx'
 import Settings from './pages/Settings.jsx'
 
 function ProtectedRoute({ children }) {
@@ -43,6 +44,7 @@ export default function App() {
                 <Route path="/reports" element={<Reports />} />
                 <Route path="/services" element={<Services />} />
                 <Route path="/products" element={<Products />} />
+                <Route path="/memberships" element={<Memberships />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>

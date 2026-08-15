@@ -18,10 +18,11 @@ import {
   Loader2,
   CircleCheck,
   CircleX,
+  Crown,
 } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, Modal, EmptyState, Badge } from '../components/ui.jsx'
-import { formatDate, daysSince, buildFollowUpMessage, whatsappLink, uid } from '../utils/helpers.js'
+import { formatDate, daysSince, buildFollowUpMessage, whatsappLink, findActiveMembership, getMembershipStatus, uid } from '../utils/helpers.js'
 
 async function sendViaWebhook(url, payload) {
   const res = await fetch(url, {
@@ -47,7 +48,7 @@ const TOKEN_HELP = [
 ]
 
 export default function FollowUps() {
-  const { clients, templates, followUps, settings } = useApp()
+  const { clients, templates, followUps, settings, clientMemberships } = useApp()
   const [tab, setTab] = useState('due')
 
   const dueClients = useMemo(() => {
@@ -63,8 +64,13 @@ export default function FollowUps() {
         // (i.e. we haven't followed up on this particular quiet streak yet).
         return !lastContact || new Date(lastContact.sentAt) <= new Date(c.lastVisit)
       })
+      .map((c) => {
+        const membership = findActiveMembership(c.id, clientMemberships)
+        const isMember = !!membership && getMembershipStatus(membership.expiryDate).label !== 'Expired'
+        return { ...c, isMember }
+      })
       .sort((a, b) => daysSince(b.lastVisit) - daysSince(a.lastVisit))
-  }, [clients, followUps, settings.followUpEnabled, settings.followUpDays])
+  }, [clients, followUps, clientMemberships, settings.followUpEnabled, settings.followUpDays])
 
   return (
     <div>
@@ -108,14 +114,19 @@ function DueTab({ dueClients }) {
   const [queueOpen, setQueueOpen] = useState(false)
   const [sendingId, setSendingId] = useState(null)
   const [bulkState, setBulkState] = useState(null) // { total, done, failed }
+  const [membersOnly, setMembersOnly] = useState(false)
 
   const template = templates.find((t) => t.id === templateId) || templates[0]
   const isAutoMode = settings.followUpAutoEnabled && !!settings.followUpWebhookUrl
 
+  const memberDueCount = useMemo(() => dueClients.filter((c) => c.isMember).length, [dueClients])
+
   const filtered = useMemo(() => {
     const q = query.toLowerCase()
-    return dueClients.filter((c) => c.name.toLowerCase().includes(q) || c.phone?.includes(q))
-  }, [dueClients, query])
+    return dueClients
+      .filter((c) => c.name.toLowerCase().includes(q) || c.phone?.includes(q))
+      .filter((c) => !membersOnly || c.isMember)
+  }, [dueClients, query, membersOnly])
 
   function toggleSelect(id) {
     setSelected((prev) => {
@@ -263,6 +274,17 @@ function DueTab({ dueClients }) {
           <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
           <input className="input pl-10" placeholder="Search due clients…" value={query} onChange={(e) => setQuery(e.target.value)} />
         </div>
+        <button
+          type="button"
+          onClick={() => setMembersOnly((v) => !v)}
+          className={`shrink-0 flex items-center gap-1.5 px-3.5 py-3 rounded-lg text-xs font-semibold border transition-colors ${
+            membersOnly ? 'bg-brass/15 border-brass/40 text-brass-dark' : 'bg-transparent border-black/10 text-muted hover:bg-black/5'
+          }`}
+          title="Show only clients with an active membership"
+        >
+          <Crown size={13} /> Members
+          {memberDueCount > 0 && <span className="tabular">({memberDueCount})</span>}
+        </button>
         <select className="input sm:w-64" value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
           {templates.map((t) => (
             <option key={t.id} value={t.id}>
@@ -291,6 +313,8 @@ function DueTab({ dueClients }) {
           subtitle={
             dueClients.length === 0
               ? `No clients have gone quiet for ${settings.followUpDays}+ days right now.`
+              : membersOnly
+              ? 'No due members right now — try turning off "Members only".'
               : 'Try a different search term.'
           }
         />
@@ -320,6 +344,11 @@ function DueTab({ dueClients }) {
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="text-sm font-semibold text-ink">{c.name}</p>
                       <Badge tone="danger">{daysSince(c.lastVisit)} days quiet</Badge>
+                      {c.isMember && (
+                        <Badge tone="brass">
+                          <Crown size={11} className="inline -mt-0.5 mr-0.5" /> Member
+                        </Badge>
+                      )}
                     </div>
                     <p className="text-xs text-muted flex items-center gap-1 mt-0.5">
                       <Phone size={11} /> {c.phone} · Last visit {formatDate(c.lastVisit)}

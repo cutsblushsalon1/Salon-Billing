@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { Search, Eye, Printer, Download, MessageCircle, Trash2, Receipt, CalendarRange, X, Pencil } from 'lucide-react'
+import { Search, Eye, Printer, Download, Share2, Trash2, Receipt, CalendarRange, X, Pencil } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, Modal, EmptyState, Badge } from '../components/ui.jsx'
 import BillPreview from '../components/BillPreview.jsx'
@@ -147,7 +147,7 @@ export default function BillingHistory() {
                             className="p-1.5 text-muted hover:text-success"
                             title="Share on WhatsApp"
                           >
-                            <MessageCircle size={15} />
+                            <Share2 size={15} />
                           </a>
                         )}
                         <button onClick={() => setConfirmDelete(b)} className="p-1.5 text-muted hover:text-danger" title="Delete">
@@ -193,7 +193,7 @@ export default function BillingHistory() {
                   rel="noreferrer"
                   className="btn-brass"
                 >
-                  <MessageCircle size={15} /> Share on WhatsApp
+                  <Share2 size={15} /> Share on WhatsApp
                 </a>
               )}
             </div>

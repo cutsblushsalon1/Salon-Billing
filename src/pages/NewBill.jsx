@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import {
   Search,
@@ -13,20 +13,31 @@ import {
   Package,
   Printer,
   Download,
-  MessageCircle,
+  Share2,
   ReceiptText,
   Check,
+  Crown,
 } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, Modal, Badge } from '../components/ui.jsx'
 import BillPreview from '../components/BillPreview.jsx'
-import { calcBillTotals, calcLineTotal, formatCurrency, whatsappBillMessage, whatsappLink, uid } from '../utils/helpers.js'
+import {
+  calcBillTotals,
+  calcLineTotal,
+  formatCurrency,
+  formatDate,
+  whatsappBillMessage,
+  whatsappLink,
+  findActiveMembership,
+  getMembershipDiscountInfo,
+  uid,
+} from '../utils/helpers.js'
 import { downloadBillPDF } from '../utils/pdf.js'
 
 const PAYMENT_METHODS = ['Cash', 'Card', 'UPI', 'Wallet']
 
 export default function NewBill() {
-  const { clients, services, products, staff, settings, createBill, upsertClient } = useApp()
+  const { clients, services, products, staff, settings, createBill, upsertClient, clientMemberships, membershipPlans } = useApp()
   const location = useLocation()
   const activeStaff = staff.filter((s) => s.active)
 
@@ -71,13 +82,23 @@ export default function NewBill() {
     return catalogList.filter((item) => item.name.toLowerCase().includes(q))
   }, [catalogList, catalogQuery])
 
+  // Tracks the member discount percentage that was last auto-applied per
+  // item type (service/product). Used to tell an untouched, auto-discounted
+  // line apart from one the staff has since edited by hand, so re-syncing
+  // the membership discount never clobbers a manual override.
+  const lastAutoDiscountRef = useRef({ service: 0, product: 0 })
+
   function addToCart(item, type) {
     setCart((prev) => {
       const existing = prev.find((c) => c.refId === item.id && c.type === type)
       if (existing) {
         return prev.map((c) => (c.refId === item.id && c.type === type ? { ...c, qty: c.qty + 1 } : c))
       }
-      return [...prev, { refId: item.id, type, name: item.name, price: item.price, qty: 1, discountPercent: 0, staffId: '', staffName: '' }]
+      const autoDiscount = lastAutoDiscountRef.current[type] || 0
+      return [
+        ...prev,
+        { refId: item.id, type, name: item.name, price: item.price, qty: 1, discountPercent: autoDiscount, staffId: '', staffName: '' },
+      ]
     })
   }
 
@@ -112,6 +133,52 @@ export default function NewBill() {
     [cart, discountType, discountValue, taxPercent],
   )
 
+  // Bill date as an actual Date object, used both for generating the bill
+  // and for checking whether it falls in a birthday/anniversary week.
+  const billDateObj = useMemo(() => {
+    const d = new Date()
+    const [y, m, dd] = billDate.split('-').map(Number)
+    d.setFullYear(y, m - 1, dd)
+    return d
+  }, [billDate])
+
+  const activeMembership = useMemo(
+    () => findActiveMembership(selectedClient?.id, clientMemberships),
+    [selectedClient?.id, clientMemberships],
+  )
+  const activeMembershipPlan = useMemo(
+    () => (activeMembership ? membershipPlans.find((p) => p.id === activeMembership.planId) : null),
+    [activeMembership, membershipPlans],
+  )
+  const membershipDiscount = useMemo(
+    () => getMembershipDiscountInfo(selectedClient, activeMembership, activeMembershipPlan, billDateObj),
+    [selectedClient, activeMembership, activeMembershipPlan, billDateObj],
+  )
+
+  // Auto-apply the member's discount (plan discount + birthday/anniversary
+  // bonus, if this week) per cart line, using the service rate for services
+  // and the product rate for products. Only lines still sitting at the
+  // previously auto-applied value are updated, so a staff member's manual
+  // per-item override is never overwritten.
+  useEffect(() => {
+    const nextAuto = membershipDiscount
+      ? { service: membershipDiscount.service.total, product: membershipDiscount.product.total }
+      : { service: 0, product: 0 }
+    const prevAuto = lastAutoDiscountRef.current
+
+    setCart((prev) =>
+      prev.map((c) => {
+        const current = Number(c.discountPercent) || 0
+        if (current === (prevAuto[c.type] || 0)) {
+          return { ...c, discountPercent: nextAuto[c.type] || 0 }
+        }
+        return c
+      }),
+    )
+    lastAutoDiscountRef.current = nextAuto
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedClient?.id, membershipDiscount?.service?.total, membershipDiscount?.product?.total])
+
   function resolveClient() {
     if (selectedClient) return selectedClient
     if (showNewClientForm && newClient.name.trim()) {
@@ -126,15 +193,11 @@ export default function NewBill() {
     if (cart.length === 0) return
     const client = resolveClient()
     const staffList = Array.from(new Map(cart.filter((c) => c.staffId).map((c) => [c.staffId, { id: c.staffId, name: c.staffName }])).values())
-    // Keep the current time-of-day, just apply whichever calendar date was chosen
-    const dateObj = new Date()
-    const [y, m, d] = billDate.split('-').map(Number)
-    dateObj.setFullYear(y, m - 1, d)
     const bill = createBill({
       client: client ? { id: client.id, name: client.name, phone: client.phone } : { name: 'Walk-in Customer' },
       staffList,
       items: cart,
-      date: dateObj.toISOString(),
+      date: billDateObj.toISOString(),
       discountType,
       discountValue: Number(discountValue) || 0,
       taxPercent: Number(taxPercent) || 0,
@@ -170,19 +233,41 @@ export default function NewBill() {
             <p className="font-display text-lg text-ink mb-4">1. Client details</p>
 
             {selectedClient ? (
-              <div className="flex items-center justify-between p-3.5 rounded-lg bg-plum/5 border border-plum/15">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-full bg-plum text-cream flex items-center justify-center text-sm font-semibold">
-                    {selectedClient.name[0]?.toUpperCase()}
+              <div>
+                <div className="flex items-center justify-between p-3.5 rounded-lg bg-plum/5 border border-plum/15">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-full bg-plum text-cream flex items-center justify-center text-sm font-semibold">
+                      {selectedClient.name[0]?.toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-ink flex items-center gap-1.5">
+                        {selectedClient.name}
+                        {activeMembership && (
+                          <Crown
+                            size={14}
+                            className="text-brass-dark shrink-0"
+                            title={`${activeMembershipPlan?.name || 'Member'} — active till ${formatDate(activeMembership.expiryDate)}`}
+                          />
+                        )}
+                      </p>
+                      <p className="text-xs text-muted">{selectedClient.phone}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-sm font-semibold text-ink">{selectedClient.name}</p>
-                    <p className="text-xs text-muted">{selectedClient.phone}</p>
-                  </div>
+                  <button onClick={() => setSelectedClient(null)} className="text-muted hover:text-danger p-1">
+                    <X size={16} />
+                  </button>
                 </div>
-                <button onClick={() => setSelectedClient(null)} className="text-muted hover:text-danger p-1">
-                  <X size={16} />
-                </button>
+                {membershipDiscount && (
+                  <div className="mt-2 flex items-center gap-1.5 text-xs text-brass-dark bg-brass/10 rounded-lg px-3 py-2">
+                    <Crown size={13} className="shrink-0" />
+                    <span>
+                      {activeMembershipPlan?.name} member — {membershipDiscount.service.total}% off services ·{' '}
+                      {membershipDiscount.product.total}% off products applied to the cart
+                      {(membershipDiscount.service.bonusDiscount > 0 || membershipDiscount.product.bonusDiscount > 0) &&
+                        ` (includes the birthday / anniversary event extra discount)`}
+                    </span>
+                  </div>
+                )}
               </div>
             ) : showNewClientForm ? (
               <div className="space-y-3 p-3.5 rounded-lg bg-black/[0.02] border border-black/5">
@@ -235,20 +320,26 @@ export default function NewBill() {
                 </div>
                 {clientMatches.length > 0 && (
                   <div className="border border-black/10 rounded-lg divide-y divide-black/5 mb-3 overflow-hidden">
-                    {clientMatches.map((c) => (
-                      <button
-                        key={c.id}
-                        onClick={() => {
-                          setSelectedClient(c)
-                          setClientQuery('')
-                        }}
-                        className="w-full flex items-center gap-3 px-3.5 py-2.5 hover:bg-black/[0.03] text-left"
-                      >
-                        <User size={14} className="text-muted" />
-                        <span className="text-sm font-medium text-ink">{c.name}</span>
-                        <span className="text-xs text-muted ml-auto">{c.phone}</span>
-                      </button>
-                    ))}
+                    {clientMatches.map((c) => {
+                      const isMember = !!findActiveMembership(c.id, clientMemberships)
+                      return (
+                        <button
+                          key={c.id}
+                          onClick={() => {
+                            setSelectedClient(c)
+                            setClientQuery('')
+                          }}
+                          className="w-full flex items-center gap-3 px-3.5 py-2.5 hover:bg-black/[0.03] text-left"
+                        >
+                          <User size={14} className="text-muted" />
+                          <span className="text-sm font-medium text-ink flex items-center gap-1.5">
+                            {c.name}
+                            {isMember && <Crown size={12} className="text-brass-dark" />}
+                          </span>
+                          <span className="text-xs text-muted ml-auto">{c.phone}</span>
+                        </button>
+                      )
+                    })}
                   </div>
                 )}
                 <div className="flex items-center gap-3">
@@ -536,7 +627,7 @@ export default function NewBill() {
                   rel="noreferrer"
                   className="btn-brass"
                 >
-                  <MessageCircle size={15} /> Share on WhatsApp
+                  <Share2 size={15} /> Share on WhatsApp
                 </a>
               )}
               <button onClick={resetForm} className="btn-primary ml-auto">

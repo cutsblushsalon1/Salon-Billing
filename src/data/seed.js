@@ -391,6 +391,48 @@ export const seedProducts = [
   { id: 'prd_93', name: 'Xtenso Care Serum', category: 'Haircare', price: 750, stock: 0, lowStockAt: 0 },
 ];
 
+export const seedMembershipPlans = [
+  {
+    id: 'plan_1',
+    name: 'Silver Membership',
+    price: 2999,
+    validityMonths: 6,
+    discountPercentService: 10,
+    discountPercentProduct: 5,
+    birthdayDiscountPercentService: 15,
+    birthdayDiscountPercentProduct: 10,
+    anniversaryDiscountPercentService: 15,
+    anniversaryDiscountPercentProduct: 10,
+    description: 'Flat 10% off services & 5% off products for 6 months.',
+  },
+  {
+    id: 'plan_2',
+    name: 'Gold Membership',
+    price: 4999,
+    validityMonths: 12,
+    discountPercentService: 15,
+    discountPercentProduct: 10,
+    birthdayDiscountPercentService: 20,
+    birthdayDiscountPercentProduct: 15,
+    anniversaryDiscountPercentService: 20,
+    anniversaryDiscountPercentProduct: 15,
+    description: 'Flat 15% off services & 10% off products + priority appointment slots.',
+  },
+  {
+    id: 'plan_3',
+    name: 'Platinum Membership',
+    price: 9999,
+    validityMonths: 12,
+    discountPercentService: 20,
+    discountPercentProduct: 15,
+    birthdayDiscountPercentService: 25,
+    birthdayDiscountPercentProduct: 20,
+    anniversaryDiscountPercentService: 25,
+    anniversaryDiscountPercentProduct: 20,
+    description: 'Flat 20% off services & 15% off products, plus one complimentary grooming session.',
+  },
+]
+
 export const defaultSettings = {
   salonName: 'Cuts & Blush Unisex Salon',
   tagline: 'East Ramkrishna Nagar',

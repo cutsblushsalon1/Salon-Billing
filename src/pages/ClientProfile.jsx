@@ -8,6 +8,7 @@ import {
   Calendar,
   TrendingUp,
   StickyNote,
+  Crown,
 } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { EmptyState, Badge } from '../components/ui.jsx'
@@ -15,14 +16,23 @@ import {
   formatCurrency,
   formatDateTime,
   formatDate,
+  getMembershipStatus,
+  getPlanDiscountFields,
 } from '../utils/helpers.js'
 
 export default function ClientProfile() {
   const { id } = useParams()
-  const { clients, bills, settings } = useApp()
+  const { clients, bills, settings, clientMemberships, membershipPlans } = useApp()
   const navigate = useNavigate()
 
   const client = clients.find((c) => c.id === id)
+
+  // Most recently enrolled membership for this client, if any.
+  const membership = clientMemberships
+    .filter((m) => m.clientId === id)
+    .sort((a, b) => new Date(b.enrolledAt || 0) - new Date(a.enrolledAt || 0))[0]
+  const membershipStatus = membership ? getMembershipStatus(membership.expiryDate) : null
+  const membershipPlan = membership ? membershipPlans.find((p) => p.id === membership.planId) : null
 
   const clientBills = bills
     .filter((b) => b.client?.id === id)
@@ -100,6 +110,12 @@ export default function ClientProfile() {
               <Badge tone="plum">
                 {client.gender || 'Unisex'}
               </Badge>
+
+              {membership && (
+                <Badge tone={membershipStatus.tone}>
+                  <Crown size={11} /> {membership.planName} · {membershipStatus.label}
+                </Badge>
+              )}
             </div>
           </div>
         </div>
@@ -172,8 +188,8 @@ export default function ClientProfile() {
         </div>
       </div>
 
-      {/* Customer Value / Follow-up Information */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+      {/* Customer Value / Follow-up / Membership Information */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
 
         <div className="card p-4">
           <div className="flex items-center gap-2 mb-2">
@@ -208,6 +224,39 @@ export default function ClientProfile() {
               ? `Last visited ${formatDate(client.lastVisit)}.`
               : 'No last visit date available.'}
           </p>
+        </div>
+
+        <div className="card p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Crown size={16} className="text-brass-dark" />
+
+            <p className="text-sm font-semibold text-ink">
+              Membership
+            </p>
+          </div>
+
+          {membership ? (
+            <p className="text-xs text-muted">
+              {membership.planName}
+              {membershipPlan
+                ? (() => {
+                    const f = getPlanDiscountFields(membershipPlan)
+                    return f.service || f.product ? ` (${f.service}% off services, ${f.product}% off products)` : ''
+                  })()
+                : ''}{' '}
+              {membershipStatus.label === 'Expired' ? 'expired' : 'expires'} {formatDate(membership.expiryDate)}.{' '}
+              <button onClick={() => navigate('/memberships')} className="text-plum hover:underline">
+                Manage
+              </button>
+            </p>
+          ) : (
+            <p className="text-xs text-muted">
+              Not enrolled in a membership yet.{' '}
+              <button onClick={() => navigate('/memberships')} className="text-plum hover:underline">
+                Enroll now
+              </button>
+            </p>
+          )}
         </div>
       </div>
 

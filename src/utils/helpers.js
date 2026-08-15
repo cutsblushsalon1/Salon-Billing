@@ -143,6 +143,148 @@ export function getBillStaffNames(bill) {
   return Array.from(names)
 }
 
+// Derives a display status for a client membership from its expiry date.
+// `daysLeft` is negative once expired, so callers can also use it for
+// "expires in N days" style copy.
+export function getMembershipStatus(expiryDate) {
+  if (!expiryDate) return { label: 'Unknown', tone: 'muted', daysLeft: null }
+  const now = new Date()
+  now.setHours(0, 0, 0, 0)
+  const exp = new Date(expiryDate)
+  exp.setHours(0, 0, 0, 0)
+  const daysLeft = Math.round((exp - now) / 86400000)
+  if (daysLeft < 0) return { label: 'Expired', tone: 'danger', daysLeft }
+  if (daysLeft <= 15) return { label: 'Expiring soon', tone: 'brass', daysLeft }
+  return { label: 'Active', tone: 'success', daysLeft }
+}
+
+// Finds a client's most relevant membership: prefers one that isn't expired,
+// falling back to the most recently enrolled record if every membership on
+// file for this client has lapsed.
+export function findActiveMembership(clientId, clientMemberships) {
+  if (!clientId) return null
+  const memberships = (clientMemberships || []).filter((m) => m.clientId === clientId)
+  if (memberships.length === 0) return null
+  const withStatus = memberships.map((m) => ({ m, status: getMembershipStatus(m.expiryDate) }))
+  const nonExpired = withStatus.filter((x) => x.status.label !== 'Expired')
+  const pool = nonExpired.length > 0 ? nonExpired : withStatus
+  return pool.sort((a, b) => new Date(b.m.enrolledAt || 0) - new Date(a.m.enrolledAt || 0))[0].m
+}
+
+// Checks whether an annual date (birthday/anniversary — year is ignored)
+// falls within `windowDays` of `refDate`, checked against its closest
+// occurrence in the previous, current, or next year (so it still matches
+// near a year boundary, e.g. a Jan 2 birthday checked on Dec 30).
+export function isInAnnualWindow(dateStr, refDate = new Date(), windowDays = 3) {
+  if (!dateStr) return false
+  const d = new Date(dateStr)
+  if (Number.isNaN(d.getTime())) return false
+  const ref = new Date(refDate)
+  ref.setHours(0, 0, 0, 0)
+  const occurrences = [ref.getFullYear() - 1, ref.getFullYear(), ref.getFullYear() + 1].map((year) => {
+    const occurrence = new Date(year, d.getMonth(), d.getDate())
+    occurrence.setHours(0, 0, 0, 0)
+    return occurrence
+  })
+  return occurrences.some((occurrence) => Math.abs((occurrence - ref) / 86400000) <= windowDays)
+}
+
+// A membership plan now carries independent discount percentages for
+// services and products, plus its own birthday-week and anniversary-week
+// bonus discounts (also split by service/product). `discountPercent` is
+// kept as a legacy fallback for plans saved before this split existed.
+export function getPlanDiscountFields(plan) {
+  if (!plan) {
+    return {
+      service: 0,
+      product: 0,
+      birthdayService: 0,
+      birthdayProduct: 0,
+      anniversaryService: 0,
+      anniversaryProduct: 0,
+    }
+  }
+  const legacy = Number(plan.discountPercent) || 0
+  return {
+    service: Number(plan.discountPercentService ?? legacy) || 0,
+    product: Number(plan.discountPercentProduct ?? legacy) || 0,
+    birthdayService: Number(plan.birthdayDiscountPercentService) || 0,
+    birthdayProduct: Number(plan.birthdayDiscountPercentProduct) || 0,
+    anniversaryService: Number(plan.anniversaryDiscountPercentService) || 0,
+    anniversaryProduct: Number(plan.anniversaryDiscountPercentProduct) || 0,
+  }
+}
+
+// Combines a membership plan's base service/product discounts with the
+// birthday or anniversary bonus (if applicable) for a given client and bill
+// date. Returns null when there's no usable (non-expired) membership to
+// discount against. The result carries a `service` and `product` breakdown
+// so each cart line can be discounted according to its own item type.
+export function getMembershipDiscountInfo(client, membership, plan, refDate = new Date()) {
+  if (!membership || !plan) return null
+  const status = getMembershipStatus(membership.expiryDate)
+  if (status.label === 'Expired') return null
+  const isBirthdayWeek = isInAnnualWindow(client?.birthday, refDate)
+  const isAnniversaryWeek = isInAnnualWindow(client?.anniversary, refDate)
+  const fields = getPlanDiscountFields(plan)
+
+  const bonusService = Math.max(
+    isBirthdayWeek ? fields.birthdayService : 0,
+    isAnniversaryWeek ? fields.anniversaryService : 0,
+  )
+  const bonusProduct = Math.max(
+    isBirthdayWeek ? fields.birthdayProduct : 0,
+    isAnniversaryWeek ? fields.anniversaryProduct : 0,
+  )
+
+  return {
+    isBirthdayWeek,
+    isAnniversaryWeek,
+    service: {
+      planDiscount: fields.service,
+      bonusDiscount: bonusService,
+      total: Math.min(100, fields.service + bonusService),
+    },
+    product: {
+      planDiscount: fields.product,
+      bonusDiscount: bonusProduct,
+      total: Math.min(100, fields.product + bonusProduct),
+    },
+  }
+}
+
+export function whatsappMembershipMessage(settings, membership, plan) {
+  const fields = getPlanDiscountFields(plan)
+  const bonusBits = []
+  if (fields.birthdayService || fields.birthdayProduct) {
+    bonusBits.push(
+      `an extra ${fields.birthdayService}% off services & ${fields.birthdayProduct}% off products during your birthday week`,
+    )
+  }
+  if (fields.anniversaryService || fields.anniversaryProduct) {
+    bonusBits.push(
+      `an extra ${fields.anniversaryService}% off services & ${fields.anniversaryProduct}% off products on your anniversary week`,
+    )
+  }
+  const lines = [
+    `*${settings.salonName}*`,
+    ``,
+    `Hi ${membership.clientName}! 🎉`,
+    `You're now enrolled in our *${membership.planName}*.`,
+    ``,
+    `Valid till: ${formatDate(membership.expiryDate)}`,
+    fields.service || fields.product
+      ? `Enjoy flat ${fields.service}% off on services and ${fields.product}% off on products all through your membership.`
+      : null,
+    ...bonusBits.map((bit) => `Plus ${bit}!`),
+    ``,
+    `Amount paid: ${formatCurrency(membership.amountPaid, settings.currencySymbol)}`,
+    ``,
+    settings.invoiceFooter || `Thank you for choosing ${settings.salonName}!`,
+  ].filter((line) => line !== null && line !== undefined)
+  return lines.join('\n')
+}
+
 export function calcLineTotal(item) {
   const gross = item.price * item.qty
   const discountPercent = Number(item.discountPercent) || 0

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react'
-import { seedServices, seedProducts, seedStaff, seedTemplates, defaultSettings, defaultAuth } from '../data/seed.js'
+import { seedServices, seedProducts, seedStaff, seedTemplates, seedMembershipPlans, defaultSettings, defaultAuth } from '../data/seed.js'
 import { uid, buildInvoiceNumber } from '../utils/helpers.js'
 
 const AppContext = createContext(null)
@@ -34,6 +34,8 @@ const STORAGE_KEYS = {
   followUps: 'salon_followups',
   bills: 'salon_bills',
   settings: 'salon_settings',
+  membershipPlans: 'salon_membership_plans',
+  clientMemberships: 'salon_client_memberships',
 }
 
 export function AppProvider({ children }) {
@@ -48,6 +50,8 @@ export function AppProvider({ children }) {
   const [followUps, setFollowUps] = useState(() => loadJSON(STORAGE_KEYS.followUps, []))
   const [bills, setBills] = useState(() => loadJSON(STORAGE_KEYS.bills, []))
   const [settings, setSettings] = useState(() => loadJSON(STORAGE_KEYS.settings, defaultSettings))
+  const [membershipPlans, setMembershipPlans] = useState(() => loadJSON(STORAGE_KEYS.membershipPlans, seedMembershipPlans))
+  const [clientMemberships, setClientMemberships] = useState(() => loadJSON(STORAGE_KEYS.clientMemberships, []))
 
   useEffect(() => saveJSON(STORAGE_KEYS.auth, auth), [auth])
   useEffect(() => saveJSON(STORAGE_KEYS.session, isAuthed), [isAuthed])
@@ -60,6 +64,8 @@ export function AppProvider({ children }) {
   useEffect(() => saveJSON(STORAGE_KEYS.followUps, followUps), [followUps])
   useEffect(() => saveJSON(STORAGE_KEYS.bills, bills), [bills])
   useEffect(() => saveJSON(STORAGE_KEYS.settings, settings), [settings])
+  useEffect(() => saveJSON(STORAGE_KEYS.membershipPlans, membershipPlans), [membershipPlans])
+  useEffect(() => saveJSON(STORAGE_KEYS.clientMemberships, clientMemberships), [clientMemberships])
 
   const login = useCallback(
     (username, password) => {
@@ -271,6 +277,50 @@ export function AppProvider({ children }) {
     setSettings((prev) => ({ ...prev, ...patch }))
   }, [])
 
+  // ---- Membership plans ----
+  const upsertMembershipPlan = useCallback((plan) => {
+    setMembershipPlans((prev) => {
+      const exists = prev.find((p) => p.id === plan.id)
+      if (exists) return prev.map((p) => (p.id === plan.id ? { ...p, ...plan } : p))
+      return [...prev, { id: uid('plan'), ...plan }]
+    })
+  }, [])
+
+  const deleteMembershipPlan = useCallback((id) => {
+    setMembershipPlans((prev) => prev.filter((p) => p.id !== id))
+  }, [])
+
+  // ---- Client memberships ----
+  // One enrollment record per client per membership purchase. enrollMembership
+  // upserts by id, so it doubles as both "enroll" and "edit enrollment".
+  const enrollMembership = useCallback((record) => {
+    setClientMemberships((prev) => {
+      const exists = prev.find((m) => m.id === record.id)
+      if (exists) return prev.map((m) => (m.id === record.id ? { ...m, ...record } : m))
+      return [...prev, { id: uid('cmem'), enrolledAt: new Date().toISOString(), ...record }]
+    })
+  }, [])
+
+  // Extends a membership's expiry by `months`, starting from whichever is
+  // later: today, or the membership's current expiry (so renewing early
+  // doesn't cost the client days, and renewing late doesn't backdate).
+  const renewMembership = useCallback((id, months) => {
+    setClientMemberships((prev) =>
+      prev.map((m) => {
+        if (m.id !== id) return m
+        const now = new Date()
+        const currentExpiry = new Date(m.expiryDate)
+        const base = currentExpiry > now ? currentExpiry : now
+        base.setMonth(base.getMonth() + (Number(months) || 0))
+        return { ...m, expiryDate: base.toISOString(), renewedAt: new Date().toISOString() }
+      }),
+    )
+  }, [])
+
+  const deleteMembership = useCallback((id) => {
+    setClientMemberships((prev) => prev.filter((m) => m.id !== id))
+  }, [])
+
   // ---- Backup / Restore ----
   const exportBackup = useCallback(() => {
     return {
@@ -284,8 +334,10 @@ export function AppProvider({ children }) {
       followUps,
       bills,
       settings,
+      membershipPlans,
+      clientMemberships,
     }
-  }, [clients, services, products, staff, attendance, templates, followUps, bills, settings])
+  }, [clients, services, products, staff, attendance, templates, followUps, bills, settings, membershipPlans, clientMemberships])
 
   const restoreBackup = useCallback((data) => {
     if (data.clients) setClients(data.clients)
@@ -297,6 +349,8 @@ export function AppProvider({ children }) {
     if (data.followUps) setFollowUps(data.followUps)
     if (data.bills) setBills(data.bills)
     if (data.settings) setSettings(data.settings)
+    if (data.membershipPlans) setMembershipPlans(data.membershipPlans)
+    if (data.clientMemberships) setClientMemberships(data.clientMemberships)
   }, [])
 
   // Reloads the built-in sample services & products (from src/data/seed.js).
@@ -347,6 +401,13 @@ export function AppProvider({ children }) {
     exportBackup,
     restoreBackup,
     resetCatalogToDefaults,
+    membershipPlans,
+    upsertMembershipPlan,
+    deleteMembershipPlan,
+    clientMemberships,
+    enrollMembership,
+    renewMembership,
+    deleteMembership,
   }
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>
