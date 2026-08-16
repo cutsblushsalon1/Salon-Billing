@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react'
 import { Search, Plus, Minus, Trash2, Scissors, Package, Save, TriangleAlert } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { Modal } from './ui.jsx'
-import { calcBillTotals, calcLineTotal, formatCurrency } from '../utils/helpers.js'
+import { calcBillTotals, calcLineTotal, formatCurrency, matchesCatalogQuery } from '../utils/helpers.js'
 
 const PAYMENT_METHODS = ['Cash', 'Card', 'UPI', 'Wallet']
 
@@ -27,8 +27,7 @@ export default function EditBillModal({ bill, open, onClose }) {
 
   const catalogList = catalogTab === 'service' ? services : products
   const filteredCatalog = useMemo(() => {
-    const q = catalogQuery.toLowerCase()
-    return catalogList.filter((item) => item.name.toLowerCase().includes(q)).slice(0, 20)
+    return catalogList.filter((item) => matchesCatalogQuery(item, catalogQuery)).slice(0, 20)
   }, [catalogList, catalogQuery])
 
   function addItem(item, type) {
@@ -146,7 +145,9 @@ export default function EditBillModal({ bill, open, onClose }) {
                       <select
                         value={it.staffId}
                         onChange={(e) => updateStaff(it.refId, it.type, e.target.value)}
-                        className={`rounded-md border px-2 py-1.5 text-xs focus:outline-none`}
+                        className={`rounded-md border px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brass/60 focus:border-brass ${
+                          it.staffId ? 'border-black/10' : 'border-danger/40 text-danger'
+                        }`}
                       >
                         <option value="">Assign staff…</option>
                         {staff.map((s) => (
@@ -206,7 +207,7 @@ export default function EditBillModal({ bill, open, onClose }) {
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
               <input
                 className="input pl-9 py-2 text-sm"
-                placeholder={`Search ${catalogTab === 'service' ? 'services' : 'products'}…`}
+                placeholder={`Search ${catalogTab === 'service' ? 'services' : 'products'} by name or category…`}
                 value={catalogQuery}
                 onChange={(e) => setCatalogQuery(e.target.value)}
               />

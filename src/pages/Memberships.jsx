@@ -20,6 +20,7 @@ import {
   getPlanDiscountFields,
   whatsappMembershipMessage,
   whatsappLink,
+  matchesCatalogQuery,
   uid,
 } from '../utils/helpers.js'
 
@@ -39,6 +40,9 @@ const emptyPlanForm = {
   anniversaryDiscountPercentService: '',
   anniversaryDiscountPercentProduct: '',
   commissionAmount: '',
+  freeServiceCount: '',
+  freeServiceValidityMonths: '',
+  freeServiceIds: [],
   description: '',
 }
 const emptyEnrollForm = { name: '', phone: '', birthday: '', anniversary: '', planId: '', startDate: '', staffId: '' }
@@ -46,6 +50,7 @@ const emptyEnrollForm = { name: '', phone: '', birthday: '', anniversary: '', pl
 export default function Memberships() {
   const {
     clients,
+    services,
     settings,
     upsertClient,
     findClientByPhone,
@@ -67,6 +72,7 @@ export default function Memberships() {
   const [editingPlanId, setEditingPlanId] = useState(null)
   const [planForm, setPlanForm] = useState(emptyPlanForm)
   const [confirmDeletePlan, setConfirmDeletePlan] = useState(null)
+  const [freeServiceQuery, setFreeServiceQuery] = useState('')
 
   // Members
   const [enrollModalOpen, setEnrollModalOpen] = useState(false)
@@ -114,6 +120,7 @@ export default function Memberships() {
   function openAddPlan() {
     setPlanForm(emptyPlanForm)
     setEditingPlanId(null)
+    setFreeServiceQuery('')
     setPlanModalOpen(true)
   }
 
@@ -130,9 +137,13 @@ export default function Memberships() {
       anniversaryDiscountPercentService: f.anniversaryService || '',
       anniversaryDiscountPercentProduct: f.anniversaryProduct || '',
       commissionAmount: p.commissionAmount || '',
+      freeServiceCount: p.freeServiceCount || '',
+      freeServiceValidityMonths: p.freeServiceValidityMonths || '',
+      freeServiceIds: Array.isArray(p.freeServiceIds) ? p.freeServiceIds : [],
       description: p.description || '',
     })
     setEditingPlanId(p.id)
+    setFreeServiceQuery('')
     setPlanModalOpen(true)
   }
 
@@ -150,6 +161,9 @@ export default function Memberships() {
       anniversaryDiscountPercentService: Number(planForm.anniversaryDiscountPercentService) || 0,
       anniversaryDiscountPercentProduct: Number(planForm.anniversaryDiscountPercentProduct) || 0,
       commissionAmount: Number(planForm.commissionAmount) || 0,
+      freeServiceCount: Number(planForm.freeServiceCount) || 0,
+      freeServiceValidityMonths: Number(planForm.freeServiceValidityMonths) || 0,
+      freeServiceIds: planForm.freeServiceIds,
       description: planForm.description,
     })
     setPlanModalOpen(false)
@@ -228,6 +242,17 @@ export default function Memberships() {
     renewMembership(member.id, member.plan?.validityMonths || 1)
     setRenewTarget(null)
   }
+
+  function toggleFreePlanService(serviceId) {
+    setPlanForm((s) => {
+      const has = s.freeServiceIds.includes(serviceId)
+      return { ...s, freeServiceIds: has ? s.freeServiceIds.filter((id) => id !== serviceId) : [...s.freeServiceIds, serviceId] }
+    })
+  }
+
+  const freeServiceMatches = useMemo(() => {
+    return services.filter((sv) => matchesCatalogQuery(sv, freeServiceQuery))
+  }, [services, freeServiceQuery])
 
   return (
     <div>
@@ -402,8 +427,14 @@ export default function Memberships() {
                       </div>
                     </div>
                     {p.commissionAmount > 0 && (
-                      <div className="mb-4 text-[11px] text-plum bg-plum/10 rounded-lg p-2.5">
+                      <div className="mb-2 text-[11px] text-plum bg-plum/10 rounded-lg p-2.5">
                         💼 Staff commission: {formatCurrency(p.commissionAmount, settings.currencySymbol)} per sale
+                      </div>
+                    )}
+                    {p.freeServiceCount > 0 && p.freeServiceIds?.length > 0 && (
+                      <div className="mb-4 text-[11px] text-success bg-success/10 rounded-lg p-2.5">
+                        🎁 {p.freeServiceCount} free service{p.freeServiceCount === 1 ? '' : 's'} · valid{' '}
+                        {p.freeServiceValidityMonths || p.validityMonths} month{(p.freeServiceValidityMonths || p.validityMonths) === 1 ? '' : 's'}
                       </div>
                     )}
                     {(hasBirthdayBonus || hasAnniversaryBonus) && (
@@ -561,6 +592,76 @@ export default function Memberships() {
                 value={planForm.commissionAmount}
                 onChange={(e) => setPlanForm((s) => ({ ...s, commissionAmount: e.target.value }))}
               />
+              <p className="text-[11px] text-muted mt-1">
+                Paid to whichever staff member is picked as "sold by" when a client enrolls in this plan.
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-black/5 p-3 space-y-3 bg-black/[0.015]">
+            <p className="text-xs font-semibold text-ink flex items-center gap-1.5">🎁 Free services included</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label text-[11px]">Number of free services</label>
+                <input
+                  className="input"
+                  type="number"
+                  min="0"
+                  placeholder="e.g. 2"
+                  value={planForm.freeServiceCount}
+                  onChange={(e) => setPlanForm((s) => ({ ...s, freeServiceCount: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="label text-[11px]">Valid for (months)</label>
+                <input
+                  className="input"
+                  type="number"
+                  min="0"
+                  placeholder={`Default: ${planForm.validityMonths || 'plan validity'}`}
+                  value={planForm.freeServiceValidityMonths}
+                  onChange={(e) => setPlanForm((s) => ({ ...s, freeServiceValidityMonths: e.target.value }))}
+                />
+              </div>
+            </div>
+            <div>
+              <label className="label text-[11px] mb-1">Services offered for free</label>
+              {services.length === 0 ? (
+                <p className="text-xs text-muted">Add services from the Services page first.</p>
+              ) : (
+                <>
+                  <div className="relative mb-1.5">
+                    <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
+                    <input
+                      className="input pl-8 py-1.5 text-xs"
+                      placeholder="Search services by name or category…"
+                      value={freeServiceQuery}
+                      onChange={(e) => setFreeServiceQuery(e.target.value)}
+                    />
+                  </div>
+                  <div className="max-h-36 overflow-y-auto border border-black/10 rounded-lg divide-y divide-black/5">
+                    {freeServiceMatches.length === 0 ? (
+                      <p className="text-xs text-muted px-3 py-2">No services match "{freeServiceQuery}".</p>
+                    ) : (
+                      freeServiceMatches.map((sv) => (
+                        <label key={sv.id} className="flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer hover:bg-black/[0.02]">
+                          <input
+                            type="checkbox"
+                            checked={planForm.freeServiceIds.includes(sv.id)}
+                            onChange={() => toggleFreePlanService(sv.id)}
+                          />
+                          <span className="text-ink">{sv.name}</span>
+                          <span className="text-muted">· {sv.category}</span>
+                          <span className="text-muted ml-auto">{formatCurrency(sv.price, settings.currencySymbol)}</span>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                  {planForm.freeServiceIds.length > 0 && (
+                    <p className="text-xs text-muted mt-2">{planForm.freeServiceIds.length} service(s) selected.</p>
+                  )}
+                </>
+              )}
             </div>
           </div>
 

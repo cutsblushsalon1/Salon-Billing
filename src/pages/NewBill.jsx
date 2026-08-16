@@ -30,6 +30,8 @@ import {
   whatsappLink,
   findActiveMembership,
   getMembershipDiscountInfo,
+  getMembershipFreeServiceInfo,
+  matchesCatalogQuery,
   uid,
 } from '../utils/helpers.js'
 import { downloadBillPDF } from '../utils/pdf.js'
@@ -37,7 +39,8 @@ import { downloadBillPDF } from '../utils/pdf.js'
 const PAYMENT_METHODS = ['Cash', 'Card', 'UPI', 'Wallet']
 
 export default function NewBill() {
-  const { clients, services, products, staff, settings, createBill, upsertClient, clientMemberships, membershipPlans } = useApp()
+  const { clients, services, products, staff, settings, createBill, upsertClient, clientMemberships, membershipPlans, claimFreeServices } =
+    useApp()
   const location = useLocation()
   const activeStaff = staff.filter((s) => s.active)
 
@@ -78,8 +81,7 @@ export default function NewBill() {
 
   const catalogList = catalogTab === 'service' ? services : products
   const filteredCatalog = useMemo(() => {
-    const q = catalogQuery.toLowerCase()
-    return catalogList.filter((item) => item.name.toLowerCase().includes(q))
+    return catalogList.filter((item) => matchesCatalogQuery(item, catalogQuery))
   }, [catalogList, catalogQuery])
 
   // Tracks the member discount percentage that was last auto-applied per
@@ -97,7 +99,17 @@ export default function NewBill() {
       const autoDiscount = lastAutoDiscountRef.current[type] || 0
       return [
         ...prev,
-        { refId: item.id, type, name: item.name, price: item.price, qty: 1, discountPercent: autoDiscount, staffId: '', staffName: '' },
+        {
+          refId: item.id,
+          type,
+          name: item.name,
+          price: item.price,
+          qty: 1,
+          discountPercent: autoDiscount,
+          staffId: '',
+          staffName: '',
+          isFreeClaim: false,
+        },
       ]
     })
   }
@@ -112,7 +124,9 @@ export default function NewBill() {
 
   function updateItemDiscount(refId, type, value) {
     const clamped = Math.max(0, Math.min(100, Number(value) || 0))
-    setCart((prev) => prev.map((c) => (c.refId === refId && c.type === type ? { ...c, discountPercent: clamped } : c)))
+    setCart((prev) =>
+      prev.map((c) => (c.refId === refId && c.type === type ? { ...c, discountPercent: clamped, isFreeClaim: false } : c)),
+    )
   }
 
   function updateItemStaff(refId, type, newStaffId) {
@@ -154,6 +168,32 @@ export default function NewBill() {
     () => getMembershipDiscountInfo(selectedClient, activeMembership, activeMembershipPlan, billDateObj),
     [selectedClient, activeMembership, activeMembershipPlan, billDateObj],
   )
+  const freeServiceInfo = useMemo(
+    () => getMembershipFreeServiceInfo(activeMembership, activeMembershipPlan, billDateObj),
+    [activeMembership, activeMembershipPlan, billDateObj],
+  )
+
+  // How many free-service credits the current cart is already claiming
+  // (summed by quantity, since claiming a line with qty > 1 uses one credit
+  // per unit), so the UI can stop offering the claim option once the
+  // membership's remaining allowance for this bill is used up.
+  const claimedFreeQty = useMemo(() => cart.filter((c) => c.isFreeClaim).reduce((sum, c) => sum + c.qty, 0), [cart])
+  const freeCreditsLeftForBill = freeServiceInfo ? Math.max(0, freeServiceInfo.remaining - claimedFreeQty) : 0
+
+  function toggleFreeClaim(refId, type) {
+    setCart((prev) =>
+      prev.map((c) => {
+        if (c.refId !== refId || c.type !== type) return c
+        if (c.isFreeClaim) {
+          // Un-claim: fall back to whatever discount the membership would
+          // otherwise auto-apply for this item type.
+          const restored = c.type === 'service' ? membershipDiscount?.service?.total || 0 : membershipDiscount?.product?.total || 0
+          return { ...c, isFreeClaim: false, discountPercent: restored }
+        }
+        return { ...c, isFreeClaim: true, discountPercent: 100 }
+      }),
+    )
+  }
 
   // Auto-apply the member's discount (plan discount + birthday/anniversary
   // bonus, if this week) per cart line, using the service rate for services
@@ -168,6 +208,7 @@ export default function NewBill() {
 
     setCart((prev) =>
       prev.map((c) => {
+        if (c.isFreeClaim) return c
         const current = Number(c.discountPercent) || 0
         if (current === (prevAuto[c.type] || 0)) {
           return { ...c, discountPercent: nextAuto[c.type] || 0 }
@@ -204,6 +245,11 @@ export default function NewBill() {
       ...totals,
       paymentMethod,
     })
+    // Deduct any claimed free services from the membership's remaining
+    // allowance so the next bill sees an accurate count.
+    if (activeMembership && claimedFreeQty > 0) {
+      claimFreeServices(activeMembership.id, claimedFreeQty)
+    }
     setGeneratedBill(bill)
   }
 
@@ -266,6 +312,25 @@ export default function NewBill() {
                       {(membershipDiscount.service.bonusDiscount > 0 || membershipDiscount.product.bonusDiscount > 0) &&
                         ` (includes the birthday / anniversary event extra discount)`}
                     </span>
+                  </div>
+                )}
+                {freeServiceInfo && (
+                  <div
+                    className={`mt-2 flex items-center gap-1.5 text-xs rounded-lg px-3 py-2 ${
+                      freeServiceInfo.eligible ? 'text-success bg-success/10' : 'text-muted bg-black/[0.03]'
+                    }`}
+                  >
+                    <Check size={13} className="shrink-0" />
+                    {freeServiceInfo.eligible ? (
+                      <span>
+                        {freeCreditsLeftForBill} of {freeServiceInfo.totalFree} free service{freeServiceInfo.totalFree === 1 ? '' : 's'}{' '}
+                        left to claim — valid till {formatDate(freeServiceInfo.windowEnd)}. Tick "Claim free" on an eligible service below.
+                      </span>
+                    ) : !freeServiceInfo.withinWindow ? (
+                      <span>Free-service window ended on {formatDate(freeServiceInfo.windowEnd)} — regular member discount applies.</span>
+                    ) : (
+                      <span>All {freeServiceInfo.totalFree} free service{freeServiceInfo.totalFree === 1 ? '' : 's'} already claimed.</span>
+                    )}
                   </div>
                 )}
               </div>
@@ -379,7 +444,7 @@ export default function NewBill() {
               <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
               <input
                 className="input pl-10"
-                placeholder={`Search ${catalogTab === 'service' ? 'services' : 'products'}…`}
+                placeholder={`Search ${catalogTab === 'service' ? 'services' : 'products'} by name or category…`}
                 value={catalogQuery}
                 onChange={(e) => setCatalogQuery(e.target.value)}
               />
@@ -389,6 +454,7 @@ export default function NewBill() {
               {filteredCatalog.map((item) => {
                 const inCartQty = cart.find((c) => c.refId === item.id && c.type === catalogTab)?.qty
                 const outOfStock = catalogTab === 'product' && item.stock <= 0
+                const isFreeEligible = catalogTab === 'service' && freeServiceInfo?.eligible && freeServiceInfo.serviceIds.includes(item.id)
                 return (
                   <button
                     key={item.id}
@@ -397,7 +463,10 @@ export default function NewBill() {
                     className="flex items-center justify-between gap-2 p-3 rounded-lg border border-black/10 hover:border-brass hover:bg-brass/5 text-left transition-colors disabled:opacity-40 disabled:hover:border-black/10 disabled:hover:bg-transparent"
                   >
                     <div className="min-w-0">
-                      <p className="text-sm font-medium text-ink truncate">{item.name}</p>
+                      <p className="text-sm font-medium text-ink truncate flex items-center gap-1.5">
+                        {item.name}
+                        {isFreeEligible && <Badge tone="success">Free eligible</Badge>}
+                      </p>
                       <p className="text-xs text-muted">
                         {formatCurrency(item.price, settings.currencySymbol)}
                         {catalogTab === 'product' && ` · ${item.stock} in stock`}
@@ -449,6 +518,11 @@ export default function NewBill() {
               <div className="space-y-4 mb-4 max-h-72 overflow-y-auto pr-1">
                 {cart.map((c) => {
                   const line = calcLineTotal(c)
+                  const canClaimFree =
+                    c.type === 'service' &&
+                    freeServiceInfo?.eligible &&
+                    freeServiceInfo.serviceIds.includes(c.refId) &&
+                    (c.isFreeClaim || freeCreditsLeftForBill >= c.qty)
                   return (
                     <div key={`${c.type}-${c.refId}`} className="pb-4 border-b border-black/5 last:border-0 last:pb-0">
                       <div className="flex items-center gap-2">
@@ -502,7 +576,8 @@ export default function NewBill() {
                             value={c.discountPercent || ''}
                             onChange={(e) => updateItemDiscount(c.refId, c.type, e.target.value)}
                             placeholder="0"
-                            className="w-14 rounded-md border border-black/10 px-1.5 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-brass/60 focus:border-brass"
+                            disabled={c.isFreeClaim}
+                            className="w-14 rounded-md border border-black/10 px-1.5 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-brass/60 focus:border-brass disabled:opacity-50"
                           />
                           <span className="text-[11px] text-muted">%</span>
                         </div>
@@ -513,6 +588,12 @@ export default function NewBill() {
                           <span className="font-semibold text-ink">{formatCurrency(line.net, settings.currencySymbol)}</span>
                         </p>
                       </div>
+                      {canClaimFree && (
+                        <label className="flex items-center gap-1.5 mt-2 text-[11px] text-success cursor-pointer">
+                          <input type="checkbox" checked={c.isFreeClaim} onChange={() => toggleFreeClaim(c.refId, c.type)} />
+                          Claim as free membership service (100% off)
+                        </label>
+                      )}
                     </div>
                   )
                 })}

@@ -1,13 +1,14 @@
 import React, { useMemo, useState } from 'react'
-import { Search, Plus, Pencil, Trash2, Package, PackagePlus, PackageMinus, AlertTriangle } from 'lucide-react'
+import { Search, Plus, Pencil, Trash2, Package, PackagePlus, PackageMinus, AlertTriangle, Download } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, Modal, EmptyState, Badge } from '../components/ui.jsx'
 import { formatCurrency, uid } from '../utils/helpers.js'
+import { downloadCatalogExcel } from '../utils/excel.js'
 
 const emptyForm = { name: '', category: '', price: '', stock: '', lowStockAt: '5' }
 
 export default function Products() {
-  const { products, settings, upsertProduct, deleteProduct, adjustStock } = useApp()
+  const { services, products, settings, upsertProduct, deleteProduct, adjustStock } = useApp()
   const [query, setQuery] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [editingId, setEditingId] = useState(null)
@@ -20,6 +21,10 @@ export default function Products() {
   }, [products, query])
 
   const lowStock = products.filter((p) => p.stock <= (p.lowStockAt ?? 5))
+
+  function handleExport() {
+    downloadCatalogExcel({ services, products, currencySymbol: settings.currencySymbol, label: 'services-and-products' })
+  }
 
   function openAdd() {
     setForm(emptyForm)
@@ -53,9 +58,14 @@ export default function Products() {
         title="Products"
         subtitle={`${products.length} product${products.length === 1 ? '' : 's'} tracked`}
         actions={
-          <button className="btn-primary" onClick={openAdd}>
-            <Plus size={16} /> Add Product
-          </button>
+          <div className="flex items-center gap-2">
+            <button className="btn-ghost" onClick={handleExport}>
+              <Download size={15} /> Export .xlsx
+            </button>
+            <button className="btn-primary" onClick={openAdd}>
+              <Plus size={16} /> Add Product
+            </button>
+          </div>
         }
       />
 

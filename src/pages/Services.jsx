@@ -1,14 +1,15 @@
 import React, { useMemo, useState } from 'react'
-import { Search, Plus, Pencil, Trash2, Scissors, Clock } from 'lucide-react'
+import { Search, Plus, Pencil, Trash2, Scissors, Clock, Download } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, Modal, EmptyState, Badge } from '../components/ui.jsx'
 import { formatCurrency, uid } from '../utils/helpers.js'
+import { downloadCatalogExcel } from '../utils/excel.js'
 
 const emptyForm = { name: '', category: '', gender: 'Unisex', price: '', duration: '' }
 const CATEGORY_TONES = { Hair: 'plum', Colour: 'brass', Treatment: 'success', Skin: 'muted', Nails: 'plum', Wellness: 'success', Makeup: 'brass' }
 
 export default function Services() {
-  const { services, settings, upsertService, deleteService } = useApp()
+  const { services, products, settings, upsertService, deleteService } = useApp()
   const [query, setQuery] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [editingId, setEditingId] = useState(null)
@@ -19,6 +20,10 @@ export default function Services() {
     const q = query.toLowerCase()
     return services.filter((s) => s.name.toLowerCase().includes(q) || s.category.toLowerCase().includes(q))
   }, [services, query])
+
+  function handleExport() {
+    downloadCatalogExcel({ services, products, currencySymbol: settings.currencySymbol, label: 'services-and-products' })
+  }
 
   function openAdd() {
     setForm(emptyForm)
@@ -52,9 +57,14 @@ export default function Services() {
         title="Services"
         subtitle={`${services.length} service${services.length === 1 ? '' : 's'} in your menu`}
         actions={
-          <button className="btn-primary" onClick={openAdd}>
-            <Plus size={16} /> Add Service
-          </button>
+          <div className="flex items-center gap-2">
+            <button className="btn-ghost" onClick={handleExport}>
+              <Download size={15} /> Export .xlsx
+            </button>
+            <button className="btn-primary" onClick={openAdd}>
+              <Plus size={16} /> Add Service
+            </button>
+          </div>
         }
       />
 

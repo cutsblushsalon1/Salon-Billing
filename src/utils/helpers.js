@@ -2,6 +2,17 @@ export function uid(prefix = 'id') {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
 }
 
+// Shared catalog search predicate for services/products: matches on name OR
+// category, so typing a category ("Hair", "Skin"…) surfaces every item in
+// it, not just an item literally named that. Used anywhere a catalog list
+// gets filtered by a search box (New Bill, Edit Bill, membership free-service
+// picker) so search behaves the same everywhere.
+export function matchesCatalogQuery(item, query) {
+  const q = (query || '').trim().toLowerCase()
+  if (!q) return true
+  return item.name.toLowerCase().includes(q) || (item.category || '').toLowerCase().includes(q)
+}
+
 export function formatCurrency(amount, symbol = '\u20B9') {
   const n = Number(amount) || 0
   return `${symbol}${n.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
@@ -253,6 +264,39 @@ export function getMembershipDiscountInfo(client, membership, plan, refDate = ne
   }
 }
 
+// A membership plan can bundle a handful of complimentary services (e.g.
+// "2 free haircuts"), available only from services on the plan's own
+// `freeServiceIds` list, capped at `freeServiceCount` redemptions total, and
+// only within `freeServiceValidityMonths` of the membership's start date
+// (falling back to the membership's own validity period if that's left
+// blank). Once the count or the window runs out, the plan's normal % discount
+// applies instead — the free perk never blocks the regular member discount.
+export function getMembershipFreeServiceInfo(membership, plan, refDate = new Date()) {
+  if (!membership || !plan) return null
+  const serviceIds = Array.isArray(plan.freeServiceIds) ? plan.freeServiceIds : []
+  const totalFree = Number(plan.freeServiceCount) || 0
+  if (serviceIds.length === 0 || totalFree === 0) return null
+
+  const windowMonths = Number(plan.freeServiceValidityMonths) || Number(plan.validityMonths) || 0
+  const start = membership.startDate ? new Date(membership.startDate) : new Date(membership.enrolledAt || refDate)
+  const windowEnd = new Date(start)
+  windowEnd.setMonth(windowEnd.getMonth() + windowMonths)
+
+  const withinWindow = windowMonths > 0 ? new Date(refDate) <= windowEnd : true
+  const used = Number(membership.freeServicesUsed) || 0
+  const remaining = Math.max(0, totalFree - used)
+
+  return {
+    serviceIds,
+    totalFree,
+    used,
+    remaining,
+    withinWindow,
+    windowEnd,
+    eligible: withinWindow && remaining > 0,
+  }
+}
+
 export function whatsappMembershipMessage(settings, membership, plan) {
   const fields = getPlanDiscountFields(plan)
   const bonusBits = []
@@ -269,7 +313,7 @@ export function whatsappMembershipMessage(settings, membership, plan) {
   const lines = [
     `*${settings.salonName}*`,
     ``,
-    `Hi ${membership.clientName}!`,
+    `Hi ${membership.clientName}! 🎉`,
     `You're now enrolled in our *${membership.planName}*.`,
     ``,
     `Valid till: ${formatDate(membership.expiryDate)}`,

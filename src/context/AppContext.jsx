@@ -321,6 +321,16 @@ export function AppProvider({ children }) {
     setClientMemberships((prev) => prev.filter((m) => m.id !== id))
   }, [])
 
+  // Records that `count` free-service redemptions have been used against a
+  // membership (called when a bill claims one or more free services), so the
+  // remaining free-service allowance shown next time is accurate.
+  const claimFreeServices = useCallback((id, count) => {
+    if (!count) return
+    setClientMemberships((prev) =>
+      prev.map((m) => (m.id === id ? { ...m, freeServicesUsed: (Number(m.freeServicesUsed) || 0) + count } : m)),
+    )
+  }, [])
+
   // ---- Backup / Restore ----
   const exportBackup = useCallback(() => {
     return {
@@ -408,6 +418,7 @@ export function AppProvider({ children }) {
     enrollMembership,
     renewMembership,
     deleteMembership,
+    claimFreeServices,
   }
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>
