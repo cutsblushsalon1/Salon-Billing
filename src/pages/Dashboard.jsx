@@ -18,14 +18,26 @@ import { StatCard, PageHeader, EmptyState, Badge } from '../components/ui.jsx'
 import { formatCurrency, formatDateTime, isSameDay, isSameMonth, daysSince } from '../utils/helpers.js'
 
 export default function Dashboard() {
-  const { bills, clients, settings, products, followUps } = useApp()
+  const { bills, clients, settings, products, followUps, clientMemberships } = useApp()
   const navigate = useNavigate()
   const today = new Date()
 
   const todayBills = bills.filter((b) => isSameDay(b.date, today))
   const monthBills = bills.filter((b) => isSameMonth(b.date, today))
-  const todayRevenue = todayBills.reduce((s, b) => s + b.total, 0)
-  const monthRevenue = monthBills.reduce((s, b) => s + b.total, 0)
+
+  // Membership sign-ups count toward revenue too, keyed off enrolledAt (the
+  // date the membership was actually sold) rather than the bill date, since
+  // enrollment doesn't necessarily go through a regular bill.
+  const todayMemberships = clientMemberships.filter((m) => isSameDay(m.enrolledAt, today))
+  const monthMemberships = clientMemberships.filter((m) => isSameMonth(m.enrolledAt, today))
+
+  const todayBillRevenue = todayBills.reduce((s, b) => s + b.total, 0)
+  const monthBillRevenue = monthBills.reduce((s, b) => s + b.total, 0)
+  const todayMembershipRevenue = todayMemberships.reduce((s, m) => s + (Number(m.amountPaid) || 0), 0)
+  const monthMembershipRevenue = monthMemberships.reduce((s, m) => s + (Number(m.amountPaid) || 0), 0)
+
+  const todayRevenue = todayBillRevenue + todayMembershipRevenue
+  const monthRevenue = monthBillRevenue + monthMembershipRevenue
   const avgBill = bills.length ? bills.reduce((s, b) => s + b.total, 0) / bills.length : 0
 
   const maleClients = clients.filter((c) => c.gender === 'Male').length
@@ -38,13 +50,14 @@ export default function Dashboard() {
       const d = new Date()
       d.setDate(d.getDate() - i)
       const dayBills = bills.filter((b) => isSameDay(b.date, d))
+      const dayMemberships = clientMemberships.filter((m) => isSameDay(m.enrolledAt, d))
       days.push({
         date: d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
-        revenue: dayBills.reduce((s, b) => s + b.total, 0),
+        revenue: dayBills.reduce((s, b) => s + b.total, 0) + dayMemberships.reduce((s, m) => s + (Number(m.amountPaid) || 0), 0),
       })
     }
     return days
-  }, [bills])
+  }, [bills, clientMemberships])
 
   const popularServices = useMemo(() => {
     const map = {}
@@ -94,14 +107,18 @@ export default function Dashboard() {
           label="Today's Revenue"
           value={formatCurrency(todayRevenue, settings.currencySymbol)}
           icon={IndianRupee}
-          trend={`${todayBills.length} bill${todayBills.length === 1 ? '' : 's'} today`}
+          trend={`${todayBills.length} bill${todayBills.length === 1 ? '' : 's'}${
+            todayMemberships.length ? ` · ${todayMemberships.length} membership${todayMemberships.length === 1 ? '' : 's'}` : ''
+          }`}
           accent="brass"
         />
         <StatCard
           label="This Month"
           value={formatCurrency(monthRevenue, settings.currencySymbol)}
           icon={TrendingUp}
-          trend={`${monthBills.length} bills this month`}
+          trend={`${monthBills.length} bill${monthBills.length === 1 ? '' : 's'}${
+            monthMemberships.length ? ` · ${monthMemberships.length} membership${monthMemberships.length === 1 ? '' : 's'}` : ''
+          }`}
           accent="plum"
         />
         <div className="card p-5">

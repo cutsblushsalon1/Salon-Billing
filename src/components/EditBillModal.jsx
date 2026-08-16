@@ -146,9 +146,7 @@ export default function EditBillModal({ bill, open, onClose }) {
                       <select
                         value={it.staffId}
                         onChange={(e) => updateStaff(it.refId, it.type, e.target.value)}
-                        className={`rounded-md border px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brass/60 focus:border-brass ${
-                          it.staffId ? 'border-black/10' : 'border-danger/40 text-danger'
-                        }`}
+                        className={`rounded-md border px-2 py-1.5 text-xs focus:outline-none`}
                       >
                         <option value="">Assign staff…</option>
                         {staff.map((s) => (

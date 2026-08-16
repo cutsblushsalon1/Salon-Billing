@@ -15,6 +15,7 @@ import {
   Download,
   Scissors,
   Package,
+  Crown,
 } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, Modal, EmptyState, Badge } from '../components/ui.jsx'
@@ -43,7 +44,7 @@ const TABS = [
 ]
 
 export default function Staff() {
-  const { staff, bills, settings, upsertStaff, deleteStaff } = useApp()
+  const { staff, bills, settings, upsertStaff, deleteStaff, clientMemberships } = useApp()
   const [tab, setTab] = useState('team')
   const [query, setQuery] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
@@ -96,6 +97,24 @@ export default function Staff() {
 
     return map
   }, [bills])
+
+  // Membership sales per staff member: lifetime count sold and the fixed
+  // commission earned (snapshotted per-enrollment, so it doesn't shift if a
+  // plan's commission amount is edited later).
+  const membershipStatsByStaff = useMemo(() => {
+    const map = {}
+    function ensure(id) {
+      if (!map[id]) map[id] = { count: 0, commission: 0 }
+      return map[id]
+    }
+    clientMemberships.forEach((m) => {
+      if (!m.staffId) return
+      const entry = ensure(m.staffId)
+      entry.count += 1
+      entry.commission += Number(m.commissionAmount) || 0
+    })
+    return map
+  }, [clientMemberships])
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase()
@@ -198,6 +217,7 @@ export default function Staff() {
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
               {filtered.map((s) => {
                 const stats = statsByStaff[s.id] || { count: 0, revenue: 0, monthServiceRevenue: 0, monthProductRevenue: 0 }
+                const memStats = membershipStatsByStaff[s.id] || { count: 0, commission: 0 }
                 return (
                   <div key={s.id} className={`card p-5 flex flex-col ${!s.active ? 'opacity-60' : ''}`}>
                     <div className="flex items-start justify-between mb-3">
@@ -267,6 +287,18 @@ export default function Staff() {
                             settings.currencySymbol,
                           )}
                         </p>
+                      </div>
+                      <div className="bg-black/[0.02] rounded-lg p-2.5">
+                        <p className="text-muted mb-0.5 flex items-center gap-1">
+                          <Crown size={11} /> Memberships sold
+                        </p>
+                        <p className="font-semibold text-ink tabular">{memStats.count}</p>
+                      </div>
+                      <div className="bg-black/[0.02] rounded-lg p-2.5">
+                        <p className="text-muted mb-0.5 flex items-center gap-1">
+                          <Crown size={11} /> Members commission
+                        </p>
+                        <p className="font-semibold text-ink tabular">{formatCurrency(memStats.commission, settings.currencySymbol)}</p>
                       </div>
                       <div className="bg-black/[0.02] rounded-lg p-2.5">
                         <p className="text-muted mb-0.5 flex items-center gap-1">

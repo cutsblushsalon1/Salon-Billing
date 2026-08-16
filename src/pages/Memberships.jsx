@@ -38,9 +38,10 @@ const emptyPlanForm = {
   birthdayDiscountPercentProduct: '',
   anniversaryDiscountPercentService: '',
   anniversaryDiscountPercentProduct: '',
+  commissionAmount: '',
   description: '',
 }
-const emptyEnrollForm = { name: '', phone: '', birthday: '', anniversary: '', planId: '', startDate: '' }
+const emptyEnrollForm = { name: '', phone: '', birthday: '', anniversary: '', planId: '', startDate: '', staffId: '' }
 
 export default function Memberships() {
   const {
@@ -48,6 +49,7 @@ export default function Memberships() {
     settings,
     upsertClient,
     findClientByPhone,
+    staff,
     membershipPlans,
     upsertMembershipPlan,
     deleteMembershipPlan,
@@ -85,12 +87,14 @@ export default function Memberships() {
       .map((m) => {
         const client = clients.find((c) => c.id === m.clientId)
         const plan = membershipPlans.find((p) => p.id === m.planId)
+        const soldBy = staff.find((s) => s.id === m.staffId)
         return {
           ...m,
           clientName: client?.name || m.clientName || 'Unknown client',
           clientPhone: client?.phone || '',
           planName: plan?.name || m.planName || 'Unknown plan',
           plan,
+          soldByName: soldBy?.name || m.staffName || '',
           status: getMembershipStatus(m.expiryDate),
         }
       })
@@ -125,6 +129,7 @@ export default function Memberships() {
       birthdayDiscountPercentProduct: f.birthdayProduct || '',
       anniversaryDiscountPercentService: f.anniversaryService || '',
       anniversaryDiscountPercentProduct: f.anniversaryProduct || '',
+      commissionAmount: p.commissionAmount || '',
       description: p.description || '',
     })
     setEditingPlanId(p.id)
@@ -144,6 +149,7 @@ export default function Memberships() {
       birthdayDiscountPercentProduct: Number(planForm.birthdayDiscountPercentProduct) || 0,
       anniversaryDiscountPercentService: Number(planForm.anniversaryDiscountPercentService) || 0,
       anniversaryDiscountPercentProduct: Number(planForm.anniversaryDiscountPercentProduct) || 0,
+      commissionAmount: Number(planForm.commissionAmount) || 0,
       description: planForm.description,
     })
     setPlanModalOpen(false)
@@ -155,6 +161,7 @@ export default function Memberships() {
       ...emptyEnrollForm,
       planId: membershipPlans[0]?.id || '',
       startDate: new Date().toISOString().slice(0, 10),
+      staffId: '',
     })
     setEnrollClientQuery('')
     setEnrollModalOpen(true)
@@ -193,6 +200,8 @@ export default function Memberships() {
     const expiry = new Date(start)
     expiry.setMonth(expiry.getMonth() + (Number(plan.validityMonths) || 1))
 
+    const soldBy = staff.find((s) => s.id === enrollForm.staffId)
+
     const membership = {
       id: uid('cmem'),
       clientId,
@@ -203,6 +212,12 @@ export default function Memberships() {
       amountPaid: plan.price,
       startDate: start.toISOString(),
       expiryDate: expiry.toISOString(),
+      // Snapshot the staff & commission at enrollment time, same way amountPaid
+      // snapshots the plan price — so later edits to the plan's commission or
+      // renaming/removing the staff member don't rewrite past sales.
+      staffId: soldBy?.id || '',
+      staffName: soldBy?.name || '',
+      commissionAmount: Number(plan.commissionAmount) || 0,
     }
     enrollMembership(membership)
     setEnrollModalOpen(false)
@@ -293,6 +308,7 @@ export default function Memberships() {
                     <tr>
                       <th className="text-left px-5 py-3 font-semibold">Client</th>
                       <th className="text-left px-5 py-3 font-semibold">Plan</th>
+                      <th className="text-left px-5 py-3 font-semibold">Sold by</th>
                       <th className="text-left px-5 py-3 font-semibold">Expires</th>
                       <th className="text-left px-5 py-3 font-semibold">Status</th>
                       <th className="text-right px-5 py-3 font-semibold">Paid</th>
@@ -318,6 +334,7 @@ export default function Memberships() {
                               ) : null
                             })()}
                         </td>
+                        <td className="px-5 py-3.5 text-muted">{m.soldByName || '—'}</td>
                         <td className="px-5 py-3.5 text-muted">{formatDate(m.expiryDate)}</td>
                         <td className="px-5 py-3.5">
                           <Badge tone={m.status.tone}>{m.status.label}</Badge>
@@ -384,6 +401,11 @@ export default function Memberships() {
                         <p className="font-semibold text-ink tabular">{p.validityMonths} month</p>
                       </div>
                     </div>
+                    {p.commissionAmount > 0 && (
+                      <div className="mb-4 text-[11px] text-plum bg-plum/10 rounded-lg p-2.5">
+                        💼 Staff commission: {formatCurrency(p.commissionAmount, settings.currencySymbol)} per sale
+                      </div>
+                    )}
                     {(hasBirthdayBonus || hasAnniversaryBonus) && (
                       <div className="mb-4 text-[11px] text-brass-dark bg-brass/10 rounded-lg p-2.5 space-y-0.5">
                         {hasBirthdayBonus && (
@@ -527,6 +549,21 @@ export default function Memberships() {
             </div>
           </div>
 
+          <div className="rounded-lg border border-black/5 p-3 space-y-3 bg-black/[0.015]">
+            <p className="text-xs font-semibold text-ink flex items-center gap-1.5">💼 Staff commission on sale</p>
+            <div>
+              <label className="label text-[11px]">Fixed commission amount ({settings.currencySymbol})</label>
+              <input
+                className="input"
+                type="number"
+                min="0"
+                placeholder="e.g. 100"
+                value={planForm.commissionAmount}
+                onChange={(e) => setPlanForm((s) => ({ ...s, commissionAmount: e.target.value }))}
+              />
+            </div>
+          </div>
+
           <div>
             <label className="label">Description (optional)</label>
             <textarea
@@ -642,6 +679,29 @@ export default function Memberships() {
             </div>
           </div>
 
+          <div>
+            <label className="label">Sold by (staff)</label>
+            <select className="input" value={enrollForm.staffId} onChange={(e) => setEnrollForm((s) => ({ ...s, staffId: e.target.value }))}>
+              <option value="">No staff / unassigned</option>
+              {staff
+                .filter((s) => s.active)
+                .map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+            </select>
+            {(() => {
+              const selectedPlan = membershipPlans.find((p) => p.id === enrollForm.planId)
+              const commission = Number(selectedPlan?.commissionAmount) || 0
+              return enrollForm.staffId && commission > 0 ? (
+                <p className="text-[11px] text-muted mt-1">
+                  This staff member will earn {formatCurrency(commission, settings.currencySymbol)} commission on this sale.
+                </p>
+              ) : null
+            })()}
+          </div>
+
           <div className="flex items-center justify-end gap-2 pt-2">
             <button onClick={() => setEnrollModalOpen(false)} className="btn-ghost">
               Cancel
@@ -672,6 +732,13 @@ export default function Memberships() {
               <p className="text-muted text-xs">
                 Amount paid: {formatCurrency(enrolledMembership.membership.amountPaid, settings.currencySymbol)}
               </p>
+              {enrolledMembership.membership.staffName && (
+                <p className="text-muted text-xs">
+                  Sold by: {enrolledMembership.membership.staffName}
+                  {enrolledMembership.membership.commissionAmount > 0 &&
+                    ` (${formatCurrency(enrolledMembership.membership.commissionAmount, settings.currencySymbol)} commission)`}
+                </p>
+              )}
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {enrolledMembership.membership.clientPhone && (

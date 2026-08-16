@@ -269,7 +269,7 @@ export function whatsappMembershipMessage(settings, membership, plan) {
   const lines = [
     `*${settings.salonName}*`,
     ``,
-    `Hi ${membership.clientName}! 🎉`,
+    `Hi ${membership.clientName}!`,
     `You're now enrolled in our *${membership.planName}*.`,
     ``,
     `Valid till: ${formatDate(membership.expiryDate)}`,
