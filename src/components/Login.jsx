@@ -1,23 +1,27 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Scissors, Lock, User, Eye, EyeOff } from 'lucide-react'
+import { Scissors, Lock, Mail, Eye, EyeOff } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 
 export default function Login() {
   const { login, settings } = useApp()
   const navigate = useNavigate()
-  const [username, setUsername] = useState('')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault()
-    const ok = login(username.trim(), password)
+    setError('')
+    setSubmitting(true)
+    const { ok, error: err } = await login(email.trim(), password)
+    setSubmitting(false)
     if (ok) {
       navigate('/')
     } else {
-      setError('Incorrect username or password.')
+      setError(err || 'Incorrect email or password.')
     }
   }
 
@@ -70,14 +74,15 @@ export default function Login() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="label">Username</label>
+              <label className="label">Email</label>
               <div className="relative">
-                <User size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
+                <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
                 <input
+                  type="email"
                   className="input pl-10"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="admin"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@salon.com"
                   autoFocus
                   required
                 />
@@ -107,14 +112,14 @@ export default function Login() {
 
             {error && <p className="text-sm text-danger">{error}</p>}
 
-            <button type="submit" className="btn-primary w-full py-3 mt-2">
-              Sign in
+            <button type="submit" className="btn-primary w-full py-3 mt-2" disabled={submitting}>
+              {submitting ? 'Signing in…' : 'Sign in'}
             </button>
           </form>
 
           <p className="text-xs text-muted mt-8 text-center">
-            Default demo login — username <span className="font-mono text-ink">admin</span>, password{' '}
-            <span className="font-mono text-ink">salon123</span>
+            Don't have an account yet? Ask whoever set up this salon's Supabase project to add
+            one under Authentication → Users.
           </p>
         </div>
       </div>

@@ -4,11 +4,13 @@ import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, Modal } from '../components/ui.jsx'
 
 export default function Settings() {
-  const { settings, updateSettings, exportBackup, restoreBackup, resetCatalogToDefaults, auth, changeCredentials, templates } = useApp()
+  const { settings, updateSettings, exportBackup, restoreBackup, resetCatalogToDefaults, user, updateLogin, templates } = useApp()
   const [form, setForm] = useState(settings)
   const [savedFlash, setSavedFlash] = useState(false)
-  const [credForm, setCredForm] = useState({ username: auth.username, password: '' })
+  const [credForm, setCredForm] = useState({ email: user?.email || '', password: '' })
   const [credSaved, setCredSaved] = useState(false)
+  const [credError, setCredError] = useState('')
+  const [credSaving, setCredSaving] = useState(false)
   const fileInputRef = useRef(null)
   const [restoreMessage, setRestoreMessage] = useState('')
   const [confirmResetCatalog, setConfirmResetCatalog] = useState(false)
@@ -48,8 +50,18 @@ export default function Settings() {
     e.target.value = ''
   }
 
-  function handleCredSave() {
-    changeCredentials(credForm.username.trim() || auth.username, credForm.password || auth.password)
+  async function handleCredSave() {
+    setCredError('')
+    setCredSaving(true)
+    const patch = {}
+    if (credForm.email.trim() && credForm.email.trim() !== user?.email) patch.email = credForm.email.trim()
+    if (credForm.password) patch.password = credForm.password
+    const { ok, error } = await updateLogin(patch)
+    setCredSaving(false)
+    if (!ok) {
+      setCredError(error || 'Could not update login.')
+      return
+    }
     setCredSaved(true)
     setCredForm((s) => ({ ...s, password: '' }))
     setTimeout(() => setCredSaved(false), 2000)
@@ -324,8 +336,14 @@ export default function Settings() {
           </div>
           <div className="space-y-3">
             <div>
-              <label className="label">Username</label>
-              <input className="input" value={credForm.username} onChange={(e) => setCredForm((s) => ({ ...s, username: e.target.value }))} />
+              <label className="label">Email</label>
+              <input
+                className="input"
+                type="email"
+                value={credForm.email}
+                onChange={(e) => setCredForm((s) => ({ ...s, email: e.target.value }))}
+              />
+              <p className="text-xs text-muted mt-1">Changing this may require confirming via a link sent to the new address.</p>
             </div>
             <div>
               <label className="label">New password</label>
@@ -337,9 +355,10 @@ export default function Settings() {
                 onChange={(e) => setCredForm((s) => ({ ...s, password: e.target.value }))}
               />
             </div>
+            {credError && <p className="text-sm text-danger">{credError}</p>}
             <div className="flex items-center gap-3">
-              <button onClick={handleCredSave} className="btn-primary">
-                Update login
+              <button onClick={handleCredSave} className="btn-primary" disabled={credSaving}>
+                {credSaving ? 'Updating…' : 'Update login'}
               </button>
               {credSaved && (
                 <span className="text-success text-sm font-medium flex items-center gap-1">

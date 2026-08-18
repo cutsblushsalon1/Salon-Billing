@@ -486,8 +486,3 @@ export const seedStaff = [
   { id: 'stf_5', name: 'Nadeem', role: 'Senior Stylist', phone: '+91 70200 34646', commissionPercent: 10, salary: 50000, joinedAt: '2025-08-29', active: true },
   { id: 'stf_6', name: 'Hanshika', role: 'Beautician & Makeup Artist', phone: '+91 92415 09696', commissionPercent: 10, salary: 32000, joinedAt: '2025-07-29', active: true },
 ]
-
-export const defaultAuth = {
-  username: 'admin',
-  password: 'salon123',
-}

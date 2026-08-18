@@ -17,18 +17,26 @@ import Products from './pages/Products.jsx'
 import Memberships from './pages/Memberships.jsx'
 import Settings from './pages/Settings.jsx'
 
+// A blank cream screen for the brief moment while supabase.auth checks for
+// an existing session on load - avoids flashing the login page for someone
+// who's already signed in.
+function AuthGate() {
+  return <div className="min-h-screen w-full bg-cream" />
+}
+
 function ProtectedRoute({ children }) {
-  const { isAuthed } = useApp()
+  const { isAuthed, authLoading } = useApp()
+  if (authLoading) return <AuthGate />
   if (!isAuthed) return <Navigate to="/login" replace />
   return children
 }
 
 export default function App() {
-  const { isAuthed } = useApp()
+  const { isAuthed, authLoading } = useApp()
 
   return (
     <Routes>
-      <Route path="/login" element={isAuthed ? <Navigate to="/" replace /> : <Login />} />
+      <Route path="/login" element={authLoading ? <AuthGate /> : isAuthed ? <Navigate to="/" replace /> : <Login />} />
       {/* Public, no-login invoice link - e.g. /invoice/INV-0001 */}
       <Route path="/invoice/:billNo" element={<PublicInvoice />} />
       <Route

@@ -1,7 +1,9 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react'
-import { seedServices, seedProducts, seedStaff, seedTemplates, seedMembershipPlans, defaultSettings, defaultAuth } from '../data/seed.js'
+import { seedServices, seedProducts, seedStaff, seedTemplates, seedMembershipPlans, defaultSettings } from '../data/seed.js'
 import { uid, buildInvoiceNumber } from '../utils/helpers.js'
 import { pushInvoiceToSupabase } from '../utils/invoiceSync.js'
+import { fetchAppState, saveAppState } from '../lib/appStateSync.js'
+import { supabase, isSupabaseConfigured } from '../lib/supabaseClient.js'
 
 const AppContext = createContext(null)
 
@@ -24,8 +26,6 @@ function saveJSON(key, value) {
 }
 
 const STORAGE_KEYS = {
-  auth: 'salon_auth',
-  session: 'salon_session',
   clients: 'salon_clients',
   services: 'salon_services',
   products: 'salon_products',
@@ -40,8 +40,33 @@ const STORAGE_KEYS = {
 }
 
 export function AppProvider({ children }) {
-  const [isAuthed, setIsAuthed] = useState(() => loadJSON(STORAGE_KEYS.session, false))
-  const [auth, setAuth] = useState(() => loadJSON(STORAGE_KEYS.auth, defaultAuth))
+  // Real Supabase Auth session, not a locally-stored username/password. `user`
+  // is the signed-in Supabase user (or null); supabase-js persists the session
+  // itself (in localStorage, under its own key) and refreshes tokens
+  // automatically, so there's no manual session bookkeeping here.
+  const [user, setUser] = useState(null)
+  const [authLoading, setAuthLoading] = useState(true)
+
+  useEffect(() => {
+    let mounted = true
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!mounted) return
+      setUser(session?.user ?? null)
+      setAuthLoading(false)
+    })
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null)
+    })
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
+  }, [])
+
+  const isAuthed = !!user
+
   const [clients, setClients] = useState(() => loadJSON(STORAGE_KEYS.clients, []))
   const [services, setServices] = useState(() => loadJSON(STORAGE_KEYS.services, seedServices))
   const [products, setProducts] = useState(() => loadJSON(STORAGE_KEYS.products, seedProducts))
@@ -54,35 +79,124 @@ export function AppProvider({ children }) {
   const [membershipPlans, setMembershipPlans] = useState(() => loadJSON(STORAGE_KEYS.membershipPlans, seedMembershipPlans))
   const [clientMemberships, setClientMemberships] = useState(() => loadJSON(STORAGE_KEYS.clientMemberships, []))
 
-  useEffect(() => saveJSON(STORAGE_KEYS.auth, auth), [auth])
-  useEffect(() => saveJSON(STORAGE_KEYS.session, isAuthed), [isAuthed])
-  useEffect(() => saveJSON(STORAGE_KEYS.clients, clients), [clients])
-  useEffect(() => saveJSON(STORAGE_KEYS.services, services), [services])
-  useEffect(() => saveJSON(STORAGE_KEYS.products, products), [products])
-  useEffect(() => saveJSON(STORAGE_KEYS.staff, staff), [staff])
-  useEffect(() => saveJSON(STORAGE_KEYS.attendance, attendance), [attendance])
-  useEffect(() => saveJSON(STORAGE_KEYS.templates, templates), [templates])
-  useEffect(() => saveJSON(STORAGE_KEYS.followUps, followUps), [followUps])
-  useEffect(() => saveJSON(STORAGE_KEYS.bills, bills), [bills])
-  useEffect(() => saveJSON(STORAGE_KEYS.settings, settings), [settings])
-  useEffect(() => saveJSON(STORAGE_KEYS.membershipPlans, membershipPlans), [membershipPlans])
-  useEffect(() => saveJSON(STORAGE_KEYS.clientMemberships, clientMemberships), [clientMemberships])
+  // Becomes true once the one-time Supabase pull below has resolved (or
+  // been skipped because Supabase isn't configured). The save effects wait
+  // for this so a fresh page load doesn't push stale local/seed data over
+  // whatever's already saved remotely before the pull has a chance to land.
+  const [hydrated, setHydrated] = useState(false)
 
-  const login = useCallback(
-    (username, password) => {
-      if (username === auth.username && password === auth.password) {
-        setIsAuthed(true)
-        return true
+  // One-time pull on mount: whatever's in Supabase wins over localStorage/
+  // seed data, since Supabase is the shared source of truth across devices.
+  // If Supabase isn't configured (no env vars) or the request fails, this
+  // resolves to {} and the app just keeps running on localStorage, same as
+  // before - nothing breaks without a backend.
+  useEffect(() => {
+    let cancelled = false
+    fetchAppState().then((remote) => {
+      if (cancelled) return
+      if (remote.clients) setClients(remote.clients)
+      if (remote.services) setServices(remote.services)
+      if (remote.products) setProducts(remote.products)
+      if (remote.staff) setStaff(remote.staff)
+      if (remote.attendance) setAttendance(remote.attendance)
+      if (remote.templates) setTemplates(remote.templates)
+      if (remote.followUps) setFollowUps(remote.followUps)
+      if (remote.bills) setBills(remote.bills)
+      if (remote.settings) setSettings(remote.settings)
+      if (remote.membershipPlans) setMembershipPlans(remote.membershipPlans)
+      if (remote.clientMemberships) setClientMemberships(remote.clientMemberships)
+      setHydrated(true)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // Everything below mirrors to Supabase (fire-and-forget) once hydration
+  // has settled. Login/session state isn't part of this - it's handled
+  // entirely by supabase.auth above, not the app_state table.
+  useEffect(() => {
+    saveJSON(STORAGE_KEYS.clients, clients)
+    if (hydrated) saveAppState('clients', clients)
+  }, [clients, hydrated])
+  useEffect(() => {
+    saveJSON(STORAGE_KEYS.services, services)
+    if (hydrated) saveAppState('services', services)
+  }, [services, hydrated])
+  useEffect(() => {
+    saveJSON(STORAGE_KEYS.products, products)
+    if (hydrated) saveAppState('products', products)
+  }, [products, hydrated])
+  useEffect(() => {
+    saveJSON(STORAGE_KEYS.staff, staff)
+    if (hydrated) saveAppState('staff', staff)
+  }, [staff, hydrated])
+  useEffect(() => {
+    saveJSON(STORAGE_KEYS.attendance, attendance)
+    if (hydrated) saveAppState('attendance', attendance)
+  }, [attendance, hydrated])
+  useEffect(() => {
+    saveJSON(STORAGE_KEYS.templates, templates)
+    if (hydrated) saveAppState('templates', templates)
+  }, [templates, hydrated])
+  useEffect(() => {
+    saveJSON(STORAGE_KEYS.followUps, followUps)
+    if (hydrated) saveAppState('followUps', followUps)
+  }, [followUps, hydrated])
+  useEffect(() => {
+    saveJSON(STORAGE_KEYS.bills, bills)
+    if (hydrated) saveAppState('bills', bills)
+  }, [bills, hydrated])
+  useEffect(() => {
+    saveJSON(STORAGE_KEYS.settings, settings)
+    if (hydrated) saveAppState('settings', settings)
+  }, [settings, hydrated])
+  useEffect(() => {
+    saveJSON(STORAGE_KEYS.membershipPlans, membershipPlans)
+    if (hydrated) saveAppState('membershipPlans', membershipPlans)
+  }, [membershipPlans, hydrated])
+  useEffect(() => {
+    saveJSON(STORAGE_KEYS.clientMemberships, clientMemberships)
+    if (hydrated) saveAppState('clientMemberships', clientMemberships)
+  }, [clientMemberships, hydrated])
+
+  // Real sign-in against Supabase Auth. The user account itself has to
+  // already exist (Supabase Dashboard -> Authentication -> Users -> Add
+  // user) - there's no self-serve sign-up screen here, same
+  // single-shared-login shape as before, just backed by a real account
+  // instead of a hardcoded password.
+  const login = useCallback(async (email, password) => {
+    if (!isSupabaseConfigured) {
+      return {
+        ok: false,
+        error: 'Supabase isn\u2019t configured yet. Add VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY to .env and restart the dev server.',
       }
-      return false
-    },
-    [auth],
-  )
+    }
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) return { ok: false, error: error.message }
+    setUser(data.user)
+    return { ok: true }
+  }, [])
 
-  const logout = useCallback(() => setIsAuthed(false), [])
+  const logout = useCallback(async () => {
+    await supabase.auth.signOut()
+    setUser(null)
+  }, [])
 
-  const changeCredentials = useCallback((username, password) => {
-    setAuth({ username, password })
+  // Updates the signed-in user's email and/or password. Pass only what's
+  // changing - {password} to just change the password, {email, password}
+  // for both. Changing the email typically triggers a Supabase confirmation
+  // email before it takes effect, depending on your project's auth settings.
+  const updateLogin = useCallback(async ({ email, password } = {}) => {
+    const payload = {}
+    if (email) payload.email = email
+    if (password) payload.password = password
+    if (!Object.keys(payload).length) return { ok: true }
+
+    const { data, error } = await supabase.auth.updateUser(payload)
+    if (error) return { ok: false, error: error.message }
+    setUser(data.user)
+    return { ok: true }
   }, [])
 
   // ---- Clients ----
@@ -384,10 +498,11 @@ export function AppProvider({ children }) {
 
   const value = {
     isAuthed,
+    authLoading,
+    user,
     login,
     logout,
-    changeCredentials,
-    auth,
+    updateLogin,
     clients,
     upsertClient,
     findClientByPhone,

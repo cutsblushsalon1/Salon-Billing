@@ -9,30 +9,35 @@ create table if not exists invoices (
   updated_at timestamptz default now()
 );
 
--- Row Level Security: the app uses the public "anon" key from the browser
--- (there's no separate backend), so read/write has to be opened up to anon.
--- Anyone with a direct invoice link can read that one invoice; nobody can
--- read/list all invoices without the exact bill_no due to the app querying
--- by bill_no, but note RLS here doesn't restrict by row - any anon caller
--- CAN select/insert/update the invoices table via the API directly if they
+-- Row Level Security: reads stay open to "anon" on purpose - that's what
+-- lets a customer open a shared /invoice/:billNo link without logging in.
+-- Nobody can list all invoices without knowing the exact bill_no (the app
+-- always queries by bill_no), but note this doesn't restrict by row: any
+-- anon caller CAN select the invoices table via the API directly if they
 -- know how. That's an acceptable tradeoff for a small single-location salon
--- app; see the chat message for a tighter, edge-function-based alternative.
+-- app's read access.
+--
+-- Writes are different: now that the app has real Supabase Auth (see
+-- src/context/AppContext.jsx), only signed-in staff can insert/update
+-- invoices - pushInvoiceToSupabase only ever runs after a staff member is
+-- logged in and creates/edits a bill, so this doesn't take anything away
+-- from the app, it just closes off writes to anyone with just the anon key.
 
 alter table invoices enable row level security;
 
 create policy "Public can read invoices"
   on invoices for select
-  to anon
+  to anon, authenticated
   using (true);
 
-create policy "App can insert invoices"
+create policy "Signed-in staff can insert invoices"
   on invoices for insert
-  to anon
+  to authenticated
   with check (true);
 
-create policy "App can update invoices"
+create policy "Signed-in staff can update invoices"
   on invoices for update
-  to anon
+  to authenticated
   using (true)
   with check (true);
 

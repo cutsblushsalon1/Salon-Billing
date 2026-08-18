@@ -6,7 +6,7 @@ import { useApp } from '../context/AppContext.jsx'
 
 export default function Layout({ children }) {
   const [mobileOpen, setMobileOpen] = useState(false)
-  const { logout, settings, auth } = useApp()
+  const { logout, settings, user } = useApp()
   const navigate = useNavigate()
 
   return (
@@ -49,13 +49,13 @@ export default function Layout({ children }) {
               </button>
               <div className="hidden sm:flex items-center gap-2 pl-3 border-l border-black/10">
                 <div className="w-8 h-8 rounded-full bg-plum text-cream flex items-center justify-center text-xs font-semibold">
-                  {auth.username?.[0]?.toUpperCase() || 'A'}
+                  {user?.email?.[0]?.toUpperCase() || 'A'}
                 </div>
-                <span className="text-sm font-medium text-ink">{auth.username}</span>
+                <span className="text-sm font-medium text-ink">{user?.email}</span>
               </div>
               <button
-                onClick={() => {
-                  logout()
+                onClick={async () => {
+                  await logout()
                   navigate('/login')
                 }}
                 className="p-2 text-muted hover:text-danger transition-colors"
