@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import { seedServices, seedProducts, seedStaff, seedTemplates, seedMembershipPlans, defaultSettings, defaultAuth } from '../data/seed.js'
 import { uid, buildInvoiceNumber } from '../utils/helpers.js'
+import { pushInvoiceToSupabase } from '../utils/invoiceSync.js'
 
 const AppContext = createContext(null)
 
@@ -220,6 +221,11 @@ export function AppProvider({ children }) {
           ),
         )
       }
+
+      // Best-effort sync so the WhatsApp invoice link works. Doesn't block
+      // the UI - the bill is already saved locally either way.
+      pushInvoiceToSupabase(bill, settings)
+
       return bill
     },
     [settings],
@@ -269,8 +275,11 @@ export function AppProvider({ children }) {
       )
     }
 
+    // Keep the shared invoice link in sync with the edited bill.
+    pushInvoiceToSupabase(updatedBill, settings)
+
     return updatedBill
-  }, [])
+  }, [settings])
 
   // ---- Settings ----
   const updateSettings = useCallback((patch) => {

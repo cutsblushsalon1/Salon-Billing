@@ -2,6 +2,7 @@ import React from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useApp } from './context/AppContext.jsx'
 import Login from './components/Login.jsx'
+import PublicInvoice from './pages/PublicInvoice.jsx'
 import Layout from './components/Layout.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import NewBill from './pages/NewBill.jsx'
@@ -28,6 +29,8 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={isAuthed ? <Navigate to="/" replace /> : <Login />} />
+      {/* Public, no-login invoice link - e.g. /invoice/INV-0001 */}
+      <Route path="/invoice/:billNo" element={<PublicInvoice />} />
       <Route
         path="/*"
         element={

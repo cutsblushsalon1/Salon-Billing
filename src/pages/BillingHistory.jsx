@@ -4,7 +4,7 @@ import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, Modal, EmptyState, Badge } from '../components/ui.jsx'
 import BillPreview from '../components/BillPreview.jsx'
 import EditBillModal from '../components/EditBillModal.jsx'
-import { formatCurrency, formatDateTime, isInRange, whatsappBillMessage, whatsappLink, getBillStaffNames } from '../utils/helpers.js'
+import { formatCurrency, formatDateTime, isInRange, whatsappInvoiceMessage, whatsappLink, getBillStaffNames } from '../utils/helpers.js'
 import { downloadBillPDF } from '../utils/pdf.js'
 
 const PAYMENT_FILTERS = ['All', 'Cash', 'Card', 'UPI', 'Wallet']
@@ -141,7 +141,7 @@ export default function BillingHistory() {
                         </button>
                         {b.client?.phone && (
                           <a
-                            href={whatsappLink(b.client.phone, whatsappBillMessage(settings, b))}
+                            href={whatsappLink(b.client.phone, whatsappInvoiceMessage(settings, b))}
                             target="_blank"
                             rel="noreferrer"
                             className="p-1.5 text-muted hover:text-success"
@@ -188,7 +188,7 @@ export default function BillingHistory() {
               </button>
               {viewBill.client?.phone && (
                 <a
-                  href={whatsappLink(viewBill.client.phone, whatsappBillMessage(settings, viewBill))}
+                  href={whatsappLink(viewBill.client.phone, whatsappInvoiceMessage(settings, viewBill))}
                   target="_blank"
                   rel="noreferrer"
                   className="btn-brass"

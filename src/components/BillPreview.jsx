@@ -3,13 +3,13 @@ import { createPortal } from 'react-dom'
 import { Scissors } from 'lucide-react'
 import { formatCurrency, formatDate, calcLineTotal, getBillStaffNames } from '../utils/helpers.js'
 
-function InvoiceLayout({ bill, settings }) {
+export function InvoiceLayout({ bill, settings }) {
   const staffNames = getBillStaffNames(bill)
   return (
     <div className="bg-white text-ink font-body invoice-sheet">
-      <div className="flex items-start justify-between mb-6 pb-5 border-b border-ink/10">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-full bg-plum/10 flex items-center justify-center shrink-0">
+      <div className="flex items-start justify-between gap-2 mb-6 pb-5 border-b border-ink/10">
+        <div className="flex items-center gap-2">
+          <div className="w-12 h-12 rounded-full bg-plum/10 hidden md:flex items-center justify-center shrink-0">
             <Scissors size={20} className="text-plum" />
           </div>
           <div>

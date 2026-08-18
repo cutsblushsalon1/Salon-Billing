@@ -446,6 +446,7 @@ export const defaultSettings = {
   defaultTaxPercent: 0,
   currencySymbol: '₹',
   upiId: '',
+  googleReviewLink: 'https://maps.app.goo.gl/B6WfRGDBtWYnpk9e8',
   // Follow-up reminders
   followUpEnabled: true,
   followUpDays: 25,

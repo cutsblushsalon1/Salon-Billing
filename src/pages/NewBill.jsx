@@ -26,7 +26,7 @@ import {
   calcLineTotal,
   formatCurrency,
   formatDate,
-  whatsappBillMessage,
+  whatsappInvoiceMessage,
   whatsappLink,
   findActiveMembership,
   getMembershipDiscountInfo,
@@ -703,7 +703,7 @@ export default function NewBill() {
               </button>
               {generatedBill.client?.phone && (
                 <a
-                  href={whatsappLink(generatedBill.client.phone, whatsappBillMessage(settings, generatedBill))}
+                  href={whatsappLink(generatedBill.client.phone, whatsappInvoiceMessage(settings, generatedBill))}
                   target="_blank"
                   rel="noreferrer"
                   className="btn-brass"

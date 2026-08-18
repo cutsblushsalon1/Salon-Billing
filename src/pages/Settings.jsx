@@ -41,7 +41,7 @@ export default function Settings() {
         setForm(data.settings || form)
         setRestoreMessage('Backup restored successfully.')
       } catch {
-        setRestoreMessage('Could not read that file — make sure it\u2019s a valid backup JSON.')
+        setRestoreMessage("Could not read that file — make sure it's a valid backup JSON.")
       }
     }
     reader.readAsText(file)
@@ -138,6 +138,16 @@ export default function Settings() {
             <div>
               <label className="label">UPI ID (optional)</label>
               <input className="input" value={form.upiId} onChange={(e) => setForm((s) => ({ ...s, upiId: e.target.value }))} />
+            </div>
+            <div>
+              <label className="label">Google review link</label>
+              <input
+                className="input"
+                placeholder="https://maps.app.goo.gl/..."
+                value={form.googleReviewLink || ''}
+                onChange={(e) => setForm((s) => ({ ...s, googleReviewLink: e.target.value }))}
+              />
+              <p className="text-xs text-muted mt-1">Included as a "Leave us a review" link in the WhatsApp invoice message.</p>
             </div>
             <div>
               <label className="label">Invoice footer note</label>

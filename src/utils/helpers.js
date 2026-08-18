@@ -56,53 +56,35 @@ export function buildInvoiceNumber(prefix, counter) {
   return `${prefix}-${String(counter).padStart(4, '0')}`
 }
 
-export function whatsappBillMessage(settings, bill) {
-  const itemLines = bill.items.flatMap((it) => {
-    const line = calcLineTotal(it)
-    const base = `* ${it.name} x${it.qty} - ${formatCurrency(line.gross, settings.currencySymbol)}`
-    if (line.discount > 0) {
-      return [base, `   ↳ ${it.discountPercent}% off - ${formatCurrency(line.net, settings.currencySymbol)}`]
-    }
-    return [base]
-  })
+// Public, no-login URL for a single invoice - opens PublicInvoice.jsx, which
+// loads the bill from Supabase by billNo.
+export function invoicePublicLink(billNo) {
+  return `${window.location.origin}/invoice/${encodeURIComponent(billNo)}`
+}
+
+// Short WhatsApp message + dynamic invoice link, instead of dumping the
+// whole itemised bill into the chat message. Clean, professional formatting
+// with a closing line asking for a Google review.
+export function whatsappInvoiceMessage(settings, bill) {
+  const name = bill.client?.name || 'there'
+  const reviewLink = settings.googleReviewLink
 
   const lines = [
-    `*${settings.salonName}*`,
+    `Hello ${name}, thank you for visiting *${settings.salonName}*!`,
     ``,
-
-    `Invoice: ${bill.billNo}`,
-    `Date: ${formatDate(bill.date)}`,
+    `Your invoice *${bill.billNo}* is ready:`,
+    invoicePublicLink(bill.billNo),
     ``,
-
-    `*SERVICES*`,
-    ...itemLines,
+    `Total paid: *${formatCurrency(bill.total, settings.currencySymbol)}*`,
     ``,
+    reviewLink ? `We'd love your feedback — please leave us a quick Google review:` : null,
+    reviewLink || null,
+    reviewLink ? `` : null,
+    `See you again soon!`,
+    `— Team ${settings.salonName}`,
+  ]
 
-    `Subtotal: ${formatCurrency(bill.grossSubtotal ?? bill.subtotal, settings.currencySymbol)}`,
-    bill.itemDiscountTotal ? `Item discounts: -${formatCurrency(bill.itemDiscountTotal, settings.currencySymbol)}` : null,
-    bill.discountAmount ? `Discount: -${formatCurrency(bill.discountAmount, settings.currencySymbol)}` : null,
-    bill.taxAmount ? `Tax (${bill.taxPercent}%): ${formatCurrency(bill.taxAmount, settings.currencySymbol)}` : null,
-    ``,
-
-    `*Total: ${formatCurrency(bill.total, settings.currencySymbol)}*`,
-    ``,
-
-    `Paid via: ${bill.paymentMethod}`,
-    ``,
-
-    settings.invoiceFooter ||
-      `Thanks for visiting ${settings.salonName}!`,
-
-    ``,
-
-    `Your feedback means a lot to us!`,
-
-    ``,
-
-    `Leave us a Google Review:`,
-    `https://maps.app.goo.gl/B6WfRGDBtWYnpk9e8`,
-  ].filter((line) => line !== null && line !== undefined);
-  return lines.join('\n')
+  return lines.filter((line) => line !== null && line !== undefined).join('\n')
 }
 
 export function whatsappLink(phone, message) {
