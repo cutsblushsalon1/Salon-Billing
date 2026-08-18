@@ -1,5 +1,3 @@
--- Run this once in Supabase Dashboard -> SQL Editor -> New query
-
 create table if not exists invoices (
   id uuid primary key default gen_random_uuid(),
   bill_no text unique not null,
@@ -8,20 +6,6 @@ create table if not exists invoices (
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
-
--- Row Level Security: reads stay open to "anon" on purpose - that's what
--- lets a customer open a shared /invoice/:billNo link without logging in.
--- Nobody can list all invoices without knowing the exact bill_no (the app
--- always queries by bill_no), but note this doesn't restrict by row: any
--- anon caller CAN select the invoices table via the API directly if they
--- know how. That's an acceptable tradeoff for a small single-location salon
--- app's read access.
---
--- Writes are different: now that the app has real Supabase Auth (see
--- src/context/AppContext.jsx), only signed-in staff can insert/update
--- invoices - pushInvoiceToSupabase only ever runs after a staff member is
--- logged in and creates/edits a bill, so this doesn't take anything away
--- from the app, it just closes off writes to anyone with just the anon key.
 
 alter table invoices enable row level security;
 
@@ -41,7 +25,6 @@ create policy "Signed-in staff can update invoices"
   using (true)
   with check (true);
 
--- Keep updated_at current on every upsert
 create or replace function set_invoice_updated_at()
 returns trigger as $$
 begin
