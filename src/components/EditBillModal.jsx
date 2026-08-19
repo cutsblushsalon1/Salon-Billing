@@ -12,7 +12,7 @@ function toDateInputValue(iso) {
 }
 
 export default function EditBillModal({ bill, open, onClose }) {
-  const { services, products, staff, settings, updateBill } = useApp()
+  const { services, products, staff, settings, updateBill, upsertClient } = useApp()
 
   const [items, setItems] = useState(() =>
     bill.items.map((it) => ({ ...it, discountPercent: it.discountPercent || 0, staffId: it.staffId || '', staffName: it.staffName || '' })),
@@ -22,6 +22,8 @@ export default function EditBillModal({ bill, open, onClose }) {
   const [taxPercent, setTaxPercent] = useState(bill.taxPercent || 0)
   const [paymentMethod, setPaymentMethod] = useState(bill.paymentMethod || 'Cash')
   const [dateStr, setDateStr] = useState(() => toDateInputValue(bill.date))
+  const [clientName, setClientName] = useState(bill.client?.name || '')
+  const [clientPhone, setClientPhone] = useState(bill.client?.phone || '')
   const [catalogTab, setCatalogTab] = useState('service')
   const [catalogQuery, setCatalogQuery] = useState('')
 
@@ -65,7 +67,7 @@ export default function EditBillModal({ bill, open, onClose }) {
     [items, discountType, discountValue, taxPercent],
   )
 
-  const canSave = items.length > 0 && items.every((it) => !!it.staffId)
+  const canSave = items.length > 0 && items.every((it) => !!it.staffId) && clientName.trim().length > 0
 
   function handleSave() {
     if (!canSave) return
@@ -74,6 +76,12 @@ export default function EditBillModal({ bill, open, onClose }) {
     const [y, m, d] = dateStr.split('-').map(Number)
     original.setFullYear(y, m - 1, d)
 
+    const trimmedName = clientName.trim()
+    const trimmedPhone = clientPhone.trim()
+    const updatedClient = bill.client?.id
+      ? { ...bill.client, name: trimmedName, phone: trimmedPhone }
+      : { name: trimmedName || 'Walk-in Customer', ...(trimmedPhone ? { phone: trimmedPhone } : {}) }
+
     updateBill(bill, {
       items,
       discountType,
@@ -81,8 +89,18 @@ export default function EditBillModal({ bill, open, onClose }) {
       taxPercent: Number(taxPercent) || 0,
       paymentMethod,
       date: original.toISOString(),
+      client: updatedClient,
       ...totals,
     })
+
+    // If this bill belongs to a saved client (not a one-off walk-in), keep
+    // their master record in sync too - otherwise the correction would only
+    // live on this one invoice while Clients, Reports, and Follow-ups still
+    // showed the old name/phone.
+    if (bill.client?.id) {
+      upsertClient({ id: bill.client.id, name: trimmedName, phone: trimmedPhone })
+    }
+
     onClose()
   }
 
@@ -90,6 +108,27 @@ export default function EditBillModal({ bill, open, onClose }) {
     <Modal open={open} onClose={onClose} title={`Edit ${bill.billNo}`} size="xl">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <div className="lg:col-span-2 space-y-4">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div>
+              <label className="label">Client name</label>
+              <input
+                className={`input ${!clientName.trim() ? 'border-danger/40' : ''}`}
+                value={clientName}
+                onChange={(e) => setClientName(e.target.value)}
+                placeholder="Walk-in Customer"
+              />
+            </div>
+            <div>
+              <label className="label">Phone number</label>
+              <input
+                className="input"
+                type="tel"
+                value={clientPhone}
+                onChange={(e) => setClientPhone(e.target.value)}
+                placeholder="10-digit mobile"
+              />
+            </div>
+          </div>
           <div className="flex items-center gap-3 flex-wrap">
             <div>
               <label className="label">Bill date</label>
@@ -291,7 +330,11 @@ export default function EditBillModal({ bill, open, onClose }) {
           <button onClick={handleSave} disabled={!canSave} className="btn-primary w-full py-2.5">
             <Save size={15} /> Save changes
           </button>
-          {!canSave && <p className="text-xs text-danger text-center">Every item needs a staff member assigned.</p>}
+          {!canSave && (
+            <p className="text-xs text-danger text-center">
+              {!clientName.trim() ? 'Client name is required.' : 'Every item needs a staff member assigned.'}
+            </p>
+          )}
         </div>
       </div>
     </Modal>

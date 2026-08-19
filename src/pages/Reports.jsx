@@ -12,14 +12,25 @@ import {
   Cell,
   Legend,
 } from 'recharts'
-import { CalendarRange, TrendingUp, Users, Users2, Scissors, CreditCard, X } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { CalendarRange, TrendingUp, Users, Users2, Scissors, CreditCard, X, Repeat, AlertTriangle, Sparkles, ArrowRight } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
-import { PageHeader, StatCard, EmptyState } from '../components/ui.jsx'
-import { formatCurrency, formatDate, isInRange, isSameMonth, calcBillItemRevenue, getBillStaffNames } from '../utils/helpers.js'
+import { PageHeader, StatCard, EmptyState, Badge } from '../components/ui.jsx'
+import {
+  formatCurrency,
+  formatDate,
+  isInRange,
+  isSameMonth,
+  calcBillItemRevenue,
+  getBillStaffNames,
+  computeClientInsights,
+  getClientSegment,
+} from '../utils/helpers.js'
 
 const TABS = [
   { id: 'revenue', label: 'Revenue', icon: TrendingUp },
   { id: 'clients', label: 'Clients', icon: Users },
+  { id: 'insights', label: 'Customer Insights', icon: Repeat },
   { id: 'services', label: 'Services', icon: Scissors },
   { id: 'staff', label: 'Staff', icon: Users2 },
   { id: 'payments', label: 'Payments', icon: CreditCard },
@@ -29,6 +40,7 @@ const PIE_COLORS = ['#5B2333', '#C79A4B', '#2F7D5E', '#8A8290']
 
 export default function Reports() {
   const { bills, clients, settings } = useApp()
+  const navigate = useNavigate()
   const [tab, setTab] = useState('revenue')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
@@ -61,6 +73,94 @@ export default function Reports() {
       .sort((a, b) => (b.totalSpent || 0) - (a.totalSpent || 0))
       .slice(0, 8)
   }, [clients])
+
+  // ---- Customer insights: how often people come back, what they're worth
+  // per visit, and who's drifting away with money still "on the table". ----
+  const clientsWithVisits = useMemo(() => clients.filter((c) => (c.visits || []).length > 0), [clients])
+
+  const clientInsights = useMemo(
+    () =>
+      clientsWithVisits
+        .map((c) => ({ client: c, insights: computeClientInsights(c), segment: getClientSegment(c) }))
+        .sort((a, b) => b.insights.totalSpent - a.insights.totalSpent),
+    [clientsWithVisits],
+  )
+
+  const repeatClients = useMemo(() => clientsWithVisits.filter((c) => (c.visits || []).length > 1), [clientsWithVisits])
+
+  const repeatRate = clientsWithVisits.length ? Math.round((repeatClients.length / clientsWithVisits.length) * 100) : 0
+
+  const avgVisitsPerClient = clientsWithVisits.length
+    ? (clientsWithVisits.reduce((s, c) => s + (c.visits || []).length, 0) / clientsWithVisits.length).toFixed(1)
+    : '0'
+
+  const avgSpendPerVisit = useMemo(() => {
+    const totalVisits = clientsWithVisits.reduce((s, c) => s + (c.visits || []).length, 0)
+    const totalSpent = clientsWithVisits.reduce((s, c) => s + (c.totalSpent || 0), 0)
+    return totalVisits ? totalSpent / totalVisits : 0
+  }, [clientsWithVisits])
+
+  // Median (not mean) gap between visits across clients who have one. With
+  // only a handful of repeat clients, a plain average is easily dragged
+  // down by one or two clients billed twice in quick succession (e.g. while
+  // testing) — the median is far less sensitive to that kind of outlier,
+  // and we surface the sample size so the number is never a mystery.
+  const avgReturnDays = useMemo(() => {
+    const gaps = clientInsights
+      .map((c) => c.insights.avgDaysBetweenVisits)
+      .filter((d) => d !== null)
+      .sort((a, b) => a - b)
+    if (gaps.length === 0) return null
+    const mid = Math.floor(gaps.length / 2)
+    const median = gaps.length % 2 !== 0 ? gaps[mid] : Math.round((gaps[mid - 1] + gaps[mid]) / 2)
+    return { days: median, sampleSize: gaps.length }
+  }, [clientInsights])
+
+  const atRiskClients = useMemo(
+    () =>
+      clientInsights
+        .filter((c) => c.segment.label === 'At risk' || c.segment.label === 'Lapsed')
+        .sort((a, b) => b.insights.totalSpent - a.insights.totalSpent),
+    [clientInsights],
+  )
+
+  const revenueAtRisk = useMemo(
+    () => atRiskClients.reduce((s, c) => s + c.insights.avgSpendPerVisit, 0),
+    [atRiskClients],
+  )
+
+  // New vs. returning revenue, month by month - the clearest signal of
+  // whether growth is coming from fresh footfall or from clients coming
+  // back, which is what a retention push (Follow-ups) actually moves.
+  const growthData = useMemo(() => {
+    const firstVisitByClient = {}
+    clients.forEach((c) => {
+      const sorted = [...(c.visits || [])].sort((a, b) => new Date(a.date) - new Date(b.date))
+      if (sorted[0]) firstVisitByClient[c.id] = sorted[0].date
+    })
+
+    const months = []
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date()
+      d.setMonth(d.getMonth() - i)
+      const monthBills = bills.filter((b) => isSameMonth(b.date, d))
+      let newRevenue = 0
+      let returningRevenue = 0
+      monthBills.forEach((b) => {
+        const clientId = b.client?.id
+        const firstVisit = clientId ? firstVisitByClient[clientId] : null
+        const isFirstVisit = firstVisit && isSameMonth(firstVisit, new Date(b.date))
+        if (!clientId || isFirstVisit) newRevenue += b.total
+        else returningRevenue += b.total
+      })
+      months.push({
+        month: d.toLocaleDateString('en-IN', { month: 'short', year: '2-digit' }),
+        New: Math.round(newRevenue),
+        Returning: Math.round(returningRevenue),
+      })
+    }
+    return months
+  }, [bills, clients])
 
   const serviceStats = useMemo(() => {
     const map = {}
@@ -209,6 +309,117 @@ export default function Reports() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {tab === 'insights' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatCard label="Repeat customer rate" value={`${repeatRate}%`} icon={Repeat} accent="plum" trend={`${repeatClients.length} of ${clientsWithVisits.length} clients return`} />
+            <StatCard label="Avg. visits per client" value={avgVisitsPerClient} icon={Users} accent="brass" />
+            <StatCard label="Avg. spend per visit" value={formatCurrency(avgSpendPerVisit, settings.currencySymbol)} icon={TrendingUp} accent="success" />
+            <StatCard
+              label="Revenue at risk"
+              value={formatCurrency(revenueAtRisk, settings.currencySymbol)}
+              icon={AlertTriangle}
+              accent="danger"
+              trend={`${atRiskClients.length} client${atRiskClients.length === 1 ? '' : 's'} overdue to return`}
+            />
+          </div>
+
+          {avgReturnDays && avgReturnDays.sampleSize >= 3 && (
+            <div className="card p-4 sm:p-5 flex items-start gap-3 bg-plum/5 border-plum/10">
+              <Sparkles size={16} className="text-plum mt-0.5 shrink-0" />
+              <p className="text-sm text-ink">
+                Based on <span className="font-semibold">{avgReturnDays.sampleSize} repeat clients</span>, the typical gap between
+                visits is <span className="font-semibold">{avgReturnDays.days} days</span>. Use this as a benchmark in{' '}
+                <span className="font-semibold">Settings → Follow-up days</span> so reminders fire right before clients would
+                naturally drift off.
+              </p>
+            </div>
+          )}
+          {avgReturnDays && avgReturnDays.sampleSize > 0 && avgReturnDays.sampleSize < 3 && (
+            <div className="card p-4 sm:p-5 flex items-start gap-3 bg-black/[0.02] border-black/5">
+              <Sparkles size={16} className="text-muted mt-0.5 shrink-0" />
+              <p className="text-sm text-muted">
+                Only <span className="font-semibold text-ink">{avgReturnDays.sampleSize}</span> client
+                {avgReturnDays.sampleSize === 1 ? ' has' : 's have'} enough visit history to estimate a return cadence so far — too
+                few to trust as a benchmark yet. This will get more reliable as more repeat visits come in.
+              </p>
+            </div>
+          )}
+
+          <div className="card p-5 sm:p-6">
+            <p className="font-display text-lg text-ink mb-1">New vs. returning revenue</p>
+            <p className="text-xs text-muted mb-4">Last 6 months — a rising "Returning" share means retention is doing the work.</p>
+            {bills.length === 0 ? (
+              <EmptyState icon={TrendingUp} title="No revenue data yet" subtitle="Generate a few bills to see this breakdown." />
+            ) : (
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={growthData} margin={{ left: -20 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1F142012" vertical={false} />
+                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#8A8290' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: '#8A8290' }} axisLine={false} tickLine={false} width={50} />
+                  <Tooltip
+                    formatter={(v) => formatCurrency(v, settings.currencySymbol)}
+                    contentStyle={{ borderRadius: 10, border: '1px solid #1F142014', fontSize: 12 }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Bar dataKey="New" stackId="rev" fill="#C79A4B" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="Returning" stackId="rev" fill="#5B2333" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+
+          <div className="card p-5 sm:p-6">
+            <div className="flex items-center justify-between mb-1 gap-3 flex-wrap">
+              <p className="font-display text-lg text-ink">Client visit cadence</p>
+              {atRiskClients.length > 0 && (
+                <button onClick={() => navigate('/follow-ups')} className="btn-brass text-xs py-1.5 px-3">
+                  Send follow-ups <ArrowRight size={13} />
+                </button>
+              )}
+            </div>
+            <p className="text-xs text-muted mb-4">How often each client returns, and what they're worth per visit.</p>
+            {clientInsights.length === 0 ? (
+              <EmptyState icon={Users} title="No visit history yet" subtitle="Once clients have billed visits, their cadence and value show up here." />
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs font-semibold uppercase tracking-wide text-muted border-b border-black/5">
+                      <th className="py-2 pr-3">Client</th>
+                      <th className="py-2 pr-3">Status</th>
+                      <th className="py-2 pr-3">Visits</th>
+                      <th className="py-2 pr-3">Avg. days between visits</th>
+                      <th className="py-2 pr-3">Avg. spend / visit</th>
+                      <th className="py-2 pr-3">Total spent</th>
+                      <th className="py-2">Last visit</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-black/5">
+                    {clientInsights.slice(0, 25).map(({ client: c, insights, segment }) => (
+                      <tr key={c.id}>
+                        <td className="py-2.5 pr-3 font-medium text-ink whitespace-nowrap">{c.name}</td>
+                        <td className="py-2.5 pr-3">
+                          <Badge tone={segment.tone}>{segment.label}</Badge>
+                        </td>
+                        <td className="py-2.5 pr-3 tabular">{insights.visitCount}</td>
+                        <td className="py-2.5 pr-3 tabular">{insights.avgDaysBetweenVisits !== null ? `${insights.avgDaysBetweenVisits}d` : '—'}</td>
+                        <td className="py-2.5 pr-3 tabular">{formatCurrency(insights.avgSpendPerVisit, settings.currencySymbol)}</td>
+                        <td className="py-2.5 pr-3 tabular font-semibold">{formatCurrency(insights.totalSpent, settings.currencySymbol)}</td>
+                        <td className="py-2.5 whitespace-nowrap text-muted">{insights.lastVisit ? formatDate(insights.lastVisit) : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {clientInsights.length > 25 && (
+                  <p className="text-xs text-muted mt-3">Showing top 25 of {clientInsights.length} clients by total spend.</p>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
 

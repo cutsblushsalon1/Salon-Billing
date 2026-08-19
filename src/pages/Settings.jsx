@@ -249,7 +249,7 @@ export default function Settings() {
             <label className="label">Webhook / API endpoint URL</label>
             <input
               className="input"
-              placeholder="https://your-backend.example.com/api/send-followup"
+              placeholder="https://api-backend.example.com/api/send-followup"
               value={form.followUpWebhookUrl}
               onChange={(e) => setForm((s) => ({ ...s, followUpWebhookUrl: e.target.value }))}
               disabled={!form.followUpAutoEnabled}
@@ -281,7 +281,7 @@ export default function Settings() {
               <label className="label">Sender number</label>
               <input
                 className="input"
-                placeholder="+91…"
+                placeholder="+91 98765 43210"
                 value={form.followUpSenderNumber}
                 onChange={(e) => setForm((s) => ({ ...s, followUpSenderNumber: e.target.value }))}
                 disabled={!form.followUpAutoEnabled}

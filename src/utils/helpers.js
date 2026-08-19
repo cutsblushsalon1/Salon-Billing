@@ -327,6 +327,62 @@ export function calcBillItemRevenue(bill) {
   return nets.map((n) => Math.round(n * (1 - ratio) * 100) / 100)
 }
 
+// Computes visit-cadence and spend insights for a single client from their
+// visit history. Powers the Reports "Customer Insights" tab (and anywhere
+// else that wants an at-a-glance sense of how often a client returns and
+// how much they're worth per visit) so the app can surface *behavioural*
+// data, not just a running total-spent figure.
+//
+// Visit records aren't guaranteed to carry a real date - imported clients
+// (see Clients.jsx bulk import) can have placeholder visits with no `date`
+// at all - so date-based math below only ever runs against visits with a
+// parseable date, and returns null (not NaN) when there isn't enough clean
+// data to compute a cadence.
+export function computeClientInsights(client) {
+  const visitCount = (client.visits || []).length
+  const totalSpent = client.totalSpent || 0
+  const avgSpendPerVisit = visitCount > 0 ? totalSpent / visitCount : 0
+
+  const datedVisits = (client.visits || [])
+    .map((v) => new Date(v.date))
+    .filter((d) => !Number.isNaN(d.getTime()))
+    .sort((a, b) => a - b)
+
+  // Average gap between visits, in days - null until there are at least two
+  // validly-dated visits to measure a gap from.
+  let avgDaysBetweenVisits = null
+  if (datedVisits.length > 1) {
+    const first = datedVisits[0]
+    const last = datedVisits[datedVisits.length - 1]
+    avgDaysBetweenVisits = Math.round((last - first) / 86400000 / (datedVisits.length - 1))
+  }
+
+  // Prefer the client's own lastVisit field; fall back to the latest
+  // validly-dated visit; null (not "" or an Invalid Date) if neither exists.
+  let lastVisit = client.lastVisit && !Number.isNaN(new Date(client.lastVisit).getTime()) ? client.lastVisit : null
+  if (!lastVisit && datedVisits.length > 0) lastVisit = datedVisits[datedVisits.length - 1].toISOString()
+  const daysSinceLastVisit = lastVisit ? daysSince(lastVisit) : null
+
+  return { visitCount, totalSpent, avgSpendPerVisit, avgDaysBetweenVisits, lastVisit, daysSinceLastVisit }
+}
+
+// Buckets a client into a lifecycle segment based on how their current gap
+// since last visit compares to their own usual visiting cadence (falling
+// back to a flat 30-day assumption for clients with only one visit on
+// record, or with no usable visit dates at all). This is what lets Reports
+// point staff at *specific* clients worth a retention push instead of just
+// a raw "hasn't visited in N days" list.
+export function getClientSegment(client) {
+  const { visitCount, daysSinceLastVisit, avgDaysBetweenVisits } = computeClientInsights(client)
+  if (visitCount === 0) return { label: 'No visits yet', tone: 'muted' }
+  if (daysSinceLastVisit === null) return { label: 'New', tone: 'brass' }
+  if (visitCount === 1) return { label: 'New', tone: 'brass' }
+  const cadence = avgDaysBetweenVisits || 30
+  if (daysSinceLastVisit > cadence * 2.5) return { label: 'Lapsed', tone: 'danger' }
+  if (daysSinceLastVisit > cadence * 1.5) return { label: 'At risk', tone: 'brass' }
+  return { label: 'Regular', tone: 'success' }
+}
+
 export function calcBillTotals({ items, discountType, discountValue, taxPercent }) {
   let grossSubtotal = 0
   let itemDiscountTotal = 0
