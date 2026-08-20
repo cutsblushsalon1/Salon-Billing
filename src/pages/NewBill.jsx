@@ -69,6 +69,15 @@ export default function NewBill() {
     if (clientId) {
       const client = clients.find((c) => c.id === clientId)
       if (client) setSelectedClient(client)
+      return
+    }
+    // Coming from an appointment for a client we don't have on file yet
+    // (e.g. their first-ever booking on the salon website) — open the "new
+    // client" form pre-filled instead of leaving the front desk to retype it.
+    const prefill = location.state?.prefillClient
+    if (prefill) {
+      setShowNewClientForm(true)
+      setNewClient({ name: prefill.name || '', phone: prefill.phone || '', email: '', gender: prefill.gender || 'Female' })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state])
@@ -169,8 +178,8 @@ export default function NewBill() {
     [selectedClient, activeMembership, activeMembershipPlan, billDateObj],
   )
   const freeServiceInfo = useMemo(
-    () => getMembershipFreeServiceInfo(activeMembership, activeMembershipPlan, billDateObj),
-    [activeMembership, activeMembershipPlan, billDateObj],
+    () => getMembershipFreeServiceInfo(activeMembership, activeMembershipPlan, billDateObj, selectedClient?.gender),
+    [activeMembership, activeMembershipPlan, billDateObj, selectedClient?.gender],
   )
 
   // How many free-service credits the current cart is already claiming

@@ -13,11 +13,14 @@ import {
   Sparkles,
   AlarmClock,
   Crown,
+  CalendarClock,
 } from 'lucide-react'
+import { useApp } from '../context/AppContext.jsx'
 
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/new-bill', label: 'New Bill', icon: Receipt },
+  { to: '/appointments', label: 'Appointments', icon: CalendarClock, badgeKey: 'pendingAppointments' },
   { to: '/history', label: 'Billing History', icon: History },
   { to: '/clients', label: 'Clients', icon: Users },
   { to: '/memberships', label: 'Memberships', icon: Crown },
@@ -30,6 +33,9 @@ const NAV_ITEMS = [
 ]
 
 export default function Sidebar({ onNavigate }) {
+  const { appointments } = useApp()
+  const pendingAppointments = appointments.filter((a) => a.status === 'pending').length
+
   return (
     <div className="flex flex-col h-full bg-ink text-cream">
       <div className="flex items-center gap-3 px-6 py-6 border-b border-cream/10">
@@ -43,7 +49,7 @@ export default function Sidebar({ onNavigate }) {
       </div>
 
       <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
-        {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
+        {NAV_ITEMS.map(({ to, label, icon: Icon, end, badgeKey }) => (
           <NavLink
             key={to}
             to={to}
@@ -59,6 +65,11 @@ export default function Sidebar({ onNavigate }) {
           >
             <Icon size={17} />
             {label}
+            {badgeKey === 'pendingAppointments' && pendingAppointments > 0 && (
+              <span className="ml-auto text-[10px] font-semibold bg-brass text-ink rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
+                {pendingAppointments}
+              </span>
+            )}
           </NavLink>
         ))}
       </nav>

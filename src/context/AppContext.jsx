@@ -4,6 +4,9 @@ import { uid, buildInvoiceNumber } from '../utils/helpers.js'
 import { pushInvoiceToSupabase } from '../utils/invoiceSync.js'
 import { fetchAppState, saveAppState } from '../lib/appStateSync.js'
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient.js'
+import { fetchAppointments, updateAppointmentStatus, deleteAppointmentRemote, subscribeToAppointments } from '../utils/appointmentsSync.js'
+import { pushPublicCatalog } from '../utils/publicCatalogSync.js'
+import { requestNotificationPermission, notifyNewAppointment } from '../utils/appointmentAlerts.js'
 
 const AppContext = createContext(null)
 
@@ -79,6 +82,14 @@ export function AppProvider({ children }) {
   const [membershipPlans, setMembershipPlans] = useState(() => loadJSON(STORAGE_KEYS.membershipPlans, seedMembershipPlans))
   const [clientMemberships, setClientMemberships] = useState(() => loadJSON(STORAGE_KEYS.clientMemberships, []))
 
+  // Appointments booked by customers on the salon's separate public website.
+  // These live in their own Supabase table (not the app_state blob) so the
+  // booking site can insert a new row any time without needing to read and
+  // merge the whole collection first. Reloaded here (and kept live via a
+  // realtime subscription) so a booking made just now shows up on screen
+  // without a refresh.
+  const [appointments, setAppointments] = useState([])
+
   // Becomes true once the one-time Supabase pull below has resolved (or
   // been skipped because Supabase isn't configured). The save effects wait
   // for this so a fresh page load doesn't push stale local/seed data over
@@ -112,6 +123,37 @@ export function AppProvider({ children }) {
     }
   }, [])
 
+  // Appointments live entirely in Supabase (no local-only fallback, since
+  // they're only useful once they can be shared with the public booking
+  // site). Load them once signed in, then stay live via realtime so new
+  // bookings appear on screen automatically.
+  useEffect(() => {
+    if (!isAuthed) {
+      setAppointments([])
+      return
+    }
+    let cancelled = false
+    fetchAppointments().then((rows) => {
+      if (!cancelled) setAppointments(rows)
+    })
+    // Ask for browser notification permission once, up front, so the
+    // permission prompt isn't tied to (and blocked by) the realtime event
+    // itself. Safe to call repeatedly - it no-ops once already granted/denied.
+    requestNotificationPermission()
+    const unsubscribe = subscribeToAppointments((payload) => {
+      if (payload?.eventType === 'INSERT' && payload.new) {
+        notifyNewAppointment(payload.new)
+      }
+      fetchAppointments().then((rows) => {
+        if (!cancelled) setAppointments(rows)
+      })
+    })
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
+  }, [isAuthed])
+
   // Everything below mirrors to Supabase (fire-and-forget) once hydration
   // has settled. Login/session state isn't part of this - it's handled
   // entirely by supabase.auth above, not the app_state table.
@@ -121,7 +163,13 @@ export function AppProvider({ children }) {
   }, [clients, hydrated])
   useEffect(() => {
     saveJSON(STORAGE_KEYS.services, services)
-    if (hydrated) saveAppState('services', services)
+    if (hydrated) {
+      saveAppState('services', services)
+      // Also publish to the public, anon-readable catalog so the salon
+      // booking website's service picker always reflects the current list
+      // (including newly added services, price changes, or removals).
+      pushPublicCatalog('services', services)
+    }
   }, [services, hydrated])
   useEffect(() => {
     saveJSON(STORAGE_KEYS.products, products)
@@ -454,6 +502,28 @@ export function AppProvider({ children }) {
     )
   }, [])
 
+  // ---- Appointments (booked on the public website, managed here) ----
+  // Optimistic local update so the status badge changes instantly, plus the
+  // real write to Supabase; the realtime subscription above will reconcile
+  // if anything drifts (e.g. another front-desk device editing the same row).
+  const markAppointmentStatus = useCallback((id, status) => {
+    setAppointments((prev) => prev.map((a) => (a.id === id ? { ...a, status } : a)))
+    updateAppointmentStatus(id, status)
+  }, [])
+
+  const removeAppointment = useCallback((id) => {
+    setAppointments((prev) => prev.filter((a) => a.id !== id))
+    deleteAppointmentRemote(id)
+  }, [])
+
+  // Manually re-publishes the current services list to the public_catalog
+  // table the booking website reads from. This normally happens
+  // automatically whenever the services list changes (see the effect
+  // above), but is also exposed here as a one-click fix from Settings —
+  // e.g. if the site's very first ever load raced ahead of that automatic
+  // push, or the table/policies were only just set up in Supabase.
+  const publishServiceCatalog = useCallback(() => pushPublicCatalog('services', services), [services])
+
   // ---- Backup / Restore ----
   const exportBackup = useCallback(() => {
     return {
@@ -543,6 +613,11 @@ export function AppProvider({ children }) {
     renewMembership,
     deleteMembership,
     claimFreeServices,
+    appointments,
+    markAppointmentStatus,
+    removeAppointment,
+    publishServiceCatalog,
+    isSupabaseConfigured,
   }
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>

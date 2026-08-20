@@ -15,6 +15,7 @@ import Reports from './pages/Reports.jsx'
 import Services from './pages/Services.jsx'
 import Products from './pages/Products.jsx'
 import Memberships from './pages/Memberships.jsx'
+import Appointments from './pages/Appointments.jsx'
 import Settings from './pages/Settings.jsx'
 
 // A blank cream screen for the brief moment while supabase.auth checks for
@@ -47,6 +48,7 @@ export default function App() {
               <Routes>
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/new-bill" element={<NewBill />} />
+                <Route path="/appointments" element={<Appointments />} />
                 <Route path="/history" element={<BillingHistory />} />
                 <Route path="/clients" element={<Clients />} />
                 <Route path="/clients/:id" element={<ClientProfile />} />

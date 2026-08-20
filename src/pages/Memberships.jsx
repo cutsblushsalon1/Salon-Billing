@@ -18,6 +18,8 @@ import {
   formatDate,
   getMembershipStatus,
   getPlanDiscountFields,
+  getPlanFreeServiceIds,
+  getPlanFreeServiceCount,
   whatsappMembershipMessage,
   whatsappLink,
   matchesCatalogQuery,
@@ -40,9 +42,15 @@ const emptyPlanForm = {
   anniversaryDiscountPercentService: '',
   anniversaryDiscountPercentProduct: '',
   commissionAmount: '',
-  freeServiceCount: '',
   freeServiceValidityMonths: '',
-  freeServiceIds: [],
+  // Both which services are free, and how many, can differ by gender
+  // (ticket values — and how many free visits make sense — are usually
+  // different for men vs women), so these are tracked as separate
+  // lists/counts per gender.
+  freeServiceCountMale: '',
+  freeServiceCountFemale: '',
+  freeServiceIdsMale: [],
+  freeServiceIdsFemale: [],
   description: '',
 }
 const emptyEnrollForm = { name: '', phone: '', birthday: '', anniversary: '', planId: '', startDate: '', staffId: '' }
@@ -137,9 +145,22 @@ export default function Memberships() {
       anniversaryDiscountPercentService: f.anniversaryService || '',
       anniversaryDiscountPercentProduct: f.anniversaryProduct || '',
       commissionAmount: p.commissionAmount || '',
-      freeServiceCount: p.freeServiceCount || '',
       freeServiceValidityMonths: p.freeServiceValidityMonths || '',
-      freeServiceIds: Array.isArray(p.freeServiceIds) ? p.freeServiceIds : [],
+      // Upgrade path for plans saved before the male/female split existed:
+      // prefill both from the old shared fields so nothing silently
+      // disappears the first time an old plan is edited.
+      freeServiceCountMale: p.freeServiceCountMale ?? p.freeServiceCount ?? '',
+      freeServiceCountFemale: p.freeServiceCountFemale ?? p.freeServiceCount ?? '',
+      freeServiceIdsMale: Array.isArray(p.freeServiceIdsMale)
+        ? p.freeServiceIdsMale
+        : Array.isArray(p.freeServiceIds)
+        ? p.freeServiceIds
+        : [],
+      freeServiceIdsFemale: Array.isArray(p.freeServiceIdsFemale)
+        ? p.freeServiceIdsFemale
+        : Array.isArray(p.freeServiceIds)
+        ? p.freeServiceIds
+        : [],
       description: p.description || '',
     })
     setEditingPlanId(p.id)
@@ -161,9 +182,19 @@ export default function Memberships() {
       anniversaryDiscountPercentService: Number(planForm.anniversaryDiscountPercentService) || 0,
       anniversaryDiscountPercentProduct: Number(planForm.anniversaryDiscountPercentProduct) || 0,
       commissionAmount: Number(planForm.commissionAmount) || 0,
-      freeServiceCount: Number(planForm.freeServiceCount) || 0,
       freeServiceValidityMonths: Number(planForm.freeServiceValidityMonths) || 0,
-      freeServiceIds: planForm.freeServiceIds,
+      freeServiceCountMale: Number(planForm.freeServiceCountMale) || 0,
+      freeServiceCountFemale: Number(planForm.freeServiceCountFemale) || 0,
+      // Kept in sync as the larger of the two, purely so anything still
+      // reading the old shared field (e.g. an older export/report) doesn't
+      // see it as empty.
+      freeServiceCount: Math.max(Number(planForm.freeServiceCountMale) || 0, Number(planForm.freeServiceCountFemale) || 0),
+      freeServiceIdsMale: planForm.freeServiceIdsMale,
+      freeServiceIdsFemale: planForm.freeServiceIdsFemale,
+      // Kept in sync as the union of both, purely so anything still reading
+      // the old shared field (e.g. an older export/report) doesn't see it
+      // as empty.
+      freeServiceIds: Array.from(new Set([...planForm.freeServiceIdsMale, ...planForm.freeServiceIdsFemale])),
       description: planForm.description,
     })
     setPlanModalOpen(false)
@@ -243,10 +274,11 @@ export default function Memberships() {
     setRenewTarget(null)
   }
 
-  function toggleFreePlanService(serviceId) {
+  function toggleFreePlanService(gender, serviceId) {
+    const key = gender === 'Male' ? 'freeServiceIdsMale' : 'freeServiceIdsFemale'
     setPlanForm((s) => {
-      const has = s.freeServiceIds.includes(serviceId)
-      return { ...s, freeServiceIds: has ? s.freeServiceIds.filter((id) => id !== serviceId) : [...s.freeServiceIds, serviceId] }
+      const has = s[key].includes(serviceId)
+      return { ...s, [key]: has ? s[key].filter((id) => id !== serviceId) : [...s[key], serviceId] }
     })
   }
 
@@ -431,10 +463,15 @@ export default function Memberships() {
                         💼 Staff commission: {formatCurrency(p.commissionAmount, settings.currencySymbol)} per sale
                       </div>
                     )}
-                    {p.freeServiceCount > 0 && p.freeServiceIds?.length > 0 && (
-                      <div className="mb-4 text-[11px] text-success bg-success/10 rounded-lg p-2.5">
-                        🎁 {p.freeServiceCount} free service{p.freeServiceCount === 1 ? '' : 's'} · valid{' '}
-                        {p.freeServiceValidityMonths || p.validityMonths} month{(p.freeServiceValidityMonths || p.validityMonths) === 1 ? '' : 's'}
+                    {(getPlanFreeServiceCount(p, 'Female') > 0 || getPlanFreeServiceCount(p, 'Male') > 0) && (
+                      <div className="mb-4 text-[11px] text-success bg-success/10 rounded-lg p-2.5 space-y-0.5">
+                        <p className="font-medium">
+                          🎁 Free services · valid {p.freeServiceValidityMonths || p.validityMonths} month
+                          {(p.freeServiceValidityMonths || p.validityMonths) === 1 ? '' : 's'}
+                        </p>
+                        <p className="text-success/80">
+                          {getPlanFreeServiceCount(p, 'Female')} for women · {getPlanFreeServiceCount(p, 'Male')} for men
+                        </p>
                       </div>
                     )}
                     {(hasBirthdayBonus || hasAnniversaryBonus) && (
@@ -600,29 +637,43 @@ export default function Memberships() {
 
           <div className="rounded-lg border border-black/5 p-3 space-y-3 bg-black/[0.015]">
             <p className="text-xs font-semibold text-ink flex items-center gap-1.5">🎁 Free services included</p>
+            <p className="text-[11px] text-muted -mt-1">
+              How many free services (and which ones) often differs for women vs men, so set each separately.
+            </p>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="label text-[11px]">Number of free services</label>
+                <label className="label text-[11px]">Free services for women</label>
                 <input
                   className="input"
                   type="number"
                   min="0"
                   placeholder="e.g. 2"
-                  value={planForm.freeServiceCount}
-                  onChange={(e) => setPlanForm((s) => ({ ...s, freeServiceCount: e.target.value }))}
+                  value={planForm.freeServiceCountFemale}
+                  onChange={(e) => setPlanForm((s) => ({ ...s, freeServiceCountFemale: e.target.value }))}
                 />
               </div>
               <div>
-                <label className="label text-[11px]">Valid for (months)</label>
+                <label className="label text-[11px]">Free services for men</label>
                 <input
                   className="input"
                   type="number"
                   min="0"
-                  placeholder={`Default: ${planForm.validityMonths || 'plan validity'}`}
-                  value={planForm.freeServiceValidityMonths}
-                  onChange={(e) => setPlanForm((s) => ({ ...s, freeServiceValidityMonths: e.target.value }))}
+                  placeholder="e.g. 2"
+                  value={planForm.freeServiceCountMale}
+                  onChange={(e) => setPlanForm((s) => ({ ...s, freeServiceCountMale: e.target.value }))}
                 />
               </div>
+            </div>
+            <div>
+              <label className="label text-[11px]">Valid for (months)</label>
+              <input
+                className="input"
+                type="number"
+                min="0"
+                placeholder={`Default: ${planForm.validityMonths || 'plan validity'}`}
+                value={planForm.freeServiceValidityMonths}
+                onChange={(e) => setPlanForm((s) => ({ ...s, freeServiceValidityMonths: e.target.value }))}
+              />
             </div>
             <div>
               <label className="label text-[11px] mb-1">Services offered for free</label>
@@ -639,27 +690,54 @@ export default function Memberships() {
                       onChange={(e) => setFreeServiceQuery(e.target.value)}
                     />
                   </div>
-                  <div className="max-h-36 overflow-y-auto border border-black/10 rounded-lg divide-y divide-black/5">
-                    {freeServiceMatches.length === 0 ? (
-                      <p className="text-xs text-muted px-3 py-2">No services match "{freeServiceQuery}".</p>
-                    ) : (
-                      freeServiceMatches.map((sv) => (
-                        <label key={sv.id} className="flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer hover:bg-black/[0.02]">
-                          <input
-                            type="checkbox"
-                            checked={planForm.freeServiceIds.includes(sv.id)}
-                            onChange={() => toggleFreePlanService(sv.id)}
-                          />
-                          <span className="text-ink">{sv.name}</span>
-                          <span className="text-muted">· {sv.category}</span>
-                          <span className="text-muted ml-auto">{formatCurrency(sv.price, settings.currencySymbol)}</span>
-                        </label>
-                      ))
-                    )}
+                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <p className="text-[11px] font-semibold text-ink mb-1">For female clients</p>
+                      <div className="max-h-36 overflow-y-auto border border-black/10 rounded-lg divide-y divide-black/5">
+                        {freeServiceMatches.length === 0 ? (
+                          <p className="text-xs text-muted px-3 py-2">No services match "{freeServiceQuery}".</p>
+                        ) : (
+                          freeServiceMatches.map((sv) => (
+                            <label key={sv.id} className="flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer hover:bg-black/[0.02]">
+                              <input
+                                type="checkbox"
+                                checked={planForm.freeServiceIdsFemale.includes(sv.id)}
+                                onChange={() => toggleFreePlanService('Female', sv.id)}
+                              />
+                              <span className="text-ink">{sv.name}</span>
+                              <span className="text-muted ml-auto">{formatCurrency(sv.price, settings.currencySymbol)}</span>
+                            </label>
+                          ))
+                        )}
+                      </div>
+                      {planForm.freeServiceIdsFemale.length > 0 && (
+                        <p className="text-xs text-muted mt-1.5">{planForm.freeServiceIdsFemale.length} service(s) selected.</p>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-semibold text-ink mb-1">For male clients</p>
+                      <div className="max-h-36 overflow-y-auto border border-black/10 rounded-lg divide-y divide-black/5">
+                        {freeServiceMatches.length === 0 ? (
+                          <p className="text-xs text-muted px-3 py-2">No services match "{freeServiceQuery}".</p>
+                        ) : (
+                          freeServiceMatches.map((sv) => (
+                            <label key={sv.id} className="flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer hover:bg-black/[0.02]">
+                              <input
+                                type="checkbox"
+                                checked={planForm.freeServiceIdsMale.includes(sv.id)}
+                                onChange={() => toggleFreePlanService('Male', sv.id)}
+                              />
+                              <span className="text-ink">{sv.name}</span>
+                              <span className="text-muted ml-auto">{formatCurrency(sv.price, settings.currencySymbol)}</span>
+                            </label>
+                          ))
+                        )}
+                      </div>
+                      {planForm.freeServiceIdsMale.length > 0 && (
+                        <p className="text-xs text-muted mt-1.5">{planForm.freeServiceIdsMale.length} service(s) selected.</p>
+                      )}
+                    </div>
                   </div>
-                  {planForm.freeServiceIds.length > 0 && (
-                    <p className="text-xs text-muted mt-2">{planForm.freeServiceIds.length} service(s) selected.</p>
-                  )}
                 </>
               )}
             </div>

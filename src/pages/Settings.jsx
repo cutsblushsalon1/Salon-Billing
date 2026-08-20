@@ -1,10 +1,22 @@
 import React, { useRef, useState } from 'react'
-import { CircleUserRound, ReceiptText, DatabaseBackup, KeyRound, Download, Upload, Check, Bell, Zap, TriangleAlert, RotateCcw } from 'lucide-react'
+import { CircleUserRound, ReceiptText, DatabaseBackup, KeyRound, Download, Upload, Check, Bell, Zap, TriangleAlert, RotateCcw, Globe, RefreshCw } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, Modal } from '../components/ui.jsx'
 
 export default function Settings() {
-  const { settings, updateSettings, exportBackup, restoreBackup, resetCatalogToDefaults, user, updateLogin, templates } = useApp()
+  const {
+    settings,
+    updateSettings,
+    exportBackup,
+    restoreBackup,
+    resetCatalogToDefaults,
+    user,
+    updateLogin,
+    templates,
+    publishServiceCatalog,
+    isSupabaseConfigured,
+    services,
+  } = useApp()
   const [form, setForm] = useState(settings)
   const [savedFlash, setSavedFlash] = useState(false)
   const [credForm, setCredForm] = useState({ email: user?.email || '', password: '' })
@@ -14,6 +26,16 @@ export default function Settings() {
   const fileInputRef = useRef(null)
   const [restoreMessage, setRestoreMessage] = useState('')
   const [confirmResetCatalog, setConfirmResetCatalog] = useState(false)
+  const [publishing, setPublishing] = useState(false)
+  const [publishResult, setPublishResult] = useState(null)
+
+  async function handlePublishCatalog() {
+    setPublishing(true)
+    setPublishResult(null)
+    const result = await publishServiceCatalog()
+    setPublishing(false)
+    setPublishResult(result)
+  }
 
   function handleSaveProfile() {
     updateSettings(form)
@@ -369,6 +391,47 @@ export default function Settings() {
           </div>
         </section>
       </div>
+
+      {/* Booking website sync */}
+      <section className="card p-5 sm:p-6 mt-6">
+        <div className="flex items-center gap-2 mb-4">
+          <Globe size={17} className="text-plum" />
+          <p className="font-display text-lg text-ink">Booking website sync</p>
+        </div>
+        <p className="text-sm text-muted mb-4">
+          Your salon website reads its service list from Supabase, not from this browser directly. It updates
+          automatically whenever you add, edit, or remove a service — this button just lets you force it right now,
+          e.g. right after setting up Supabase, or to check the connection is working.
+        </p>
+        <div className="flex items-center gap-2 mb-3">
+          <span
+            className={`w-2 h-2 rounded-full ${isSupabaseConfigured ? 'bg-success' : 'bg-danger'}`}
+          />
+          <span className="text-xs text-muted">
+            {isSupabaseConfigured
+              ? 'Supabase is configured for this app.'
+              : "Supabase isn't configured — add VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY to this app's .env and restart it before publishing."}
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <button onClick={handlePublishCatalog} className="btn-ghost" disabled={publishing || !isSupabaseConfigured}>
+            <RefreshCw size={15} className={publishing ? 'animate-spin' : ''} /> {publishing ? 'Publishing…' : 'Publish services now'}
+          </button>
+          <span className="text-xs text-muted">{services.length} services in your catalog</span>
+        </div>
+        {publishResult && (
+          <p className={`text-xs mt-3 ${publishResult.ok ? 'text-success' : 'text-danger'}`}>
+            {publishResult.ok
+              ? 'Published. Refresh the booking page on your website to see it.'
+              : `Failed to publish: ${publishResult.error}`}
+          </p>
+        )}
+        <p className="text-xs text-muted mt-4">
+          Still not showing on the website? Double check: (1) the site's own <code>.env</code> has the exact same
+          Supabase URL/key as this app, (2) you've run <code>supabase/public_catalog.sql</code> in the Supabase SQL
+          editor, and (3) the website was rebuilt/redeployed after that <code>.env</code> was added.
+        </p>
+      </section>
 
       <Modal open={confirmResetCatalog} onClose={() => setConfirmResetCatalog(false)} title="Reset services & products?" size="sm">
         <div>

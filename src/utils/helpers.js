@@ -247,16 +247,47 @@ export function getMembershipDiscountInfo(client, membership, plan, refDate = ne
 }
 
 // A membership plan can bundle a handful of complimentary services (e.g.
-// "2 free haircuts"), available only from services on the plan's own
-// `freeServiceIds` list, capped at `freeServiceCount` redemptions total, and
-// only within `freeServiceValidityMonths` of the membership's start date
-// (falling back to the membership's own validity period if that's left
-// blank). Once the count or the window runs out, the plan's normal % discount
-// applies instead — the free perk never blocks the regular member discount.
-export function getMembershipFreeServiceInfo(membership, plan, refDate = new Date()) {
+// "2 free haircuts"), available only from services on the plan's free-service
+// list, and only within `freeServiceValidityMonths` of the membership's
+// start date (falling back to the membership's own validity period if
+// that's left blank). Once the count or the window runs out, the plan's
+// normal % discount applies instead — the free perk never blocks the
+// regular member discount.
+//
+// Both WHICH services are free and HOW MANY of them can differ by gender
+// (ticket values, and how many "free" visits make sense, are usually
+// different for men and women), so a plan carries two lists —
+// `freeServiceIdsMale` / `freeServiceIdsFemale` — and two counts —
+// `freeServiceCountMale` / `freeServiceCountFemale`. `freeServiceIds` /
+// `freeServiceCount` are kept as legacy fallbacks for plans saved before the
+// male/female split existed, used for either gender (or when the client's
+// gender isn't set) if no gender-specific value is present.
+export function getPlanFreeServiceIds(plan, gender) {
+  if (!plan) return []
+  const male = Array.isArray(plan.freeServiceIdsMale) ? plan.freeServiceIdsMale : null
+  const female = Array.isArray(plan.freeServiceIdsFemale) ? plan.freeServiceIdsFemale : null
+  if (gender === 'Male' && male) return male
+  if (gender === 'Female' && female) return female
+  if (male || female) return (gender === 'Male' ? male : female) || []
+  return Array.isArray(plan.freeServiceIds) ? plan.freeServiceIds : []
+}
+
+export function getPlanFreeServiceCount(plan, gender) {
+  if (!plan) return 0
+  const male = plan.freeServiceCountMale
+  const female = plan.freeServiceCountFemale
+  const hasMale = male !== undefined && male !== null && male !== ''
+  const hasFemale = female !== undefined && female !== null && female !== ''
+  if (gender === 'Male' && hasMale) return Number(male) || 0
+  if (gender === 'Female' && hasFemale) return Number(female) || 0
+  if (hasMale || hasFemale) return Number(gender === 'Male' ? male : female) || 0
+  return Number(plan.freeServiceCount) || 0
+}
+
+export function getMembershipFreeServiceInfo(membership, plan, refDate = new Date(), gender) {
   if (!membership || !plan) return null
-  const serviceIds = Array.isArray(plan.freeServiceIds) ? plan.freeServiceIds : []
-  const totalFree = Number(plan.freeServiceCount) || 0
+  const serviceIds = getPlanFreeServiceIds(plan, gender)
+  const totalFree = getPlanFreeServiceCount(plan, gender)
   if (serviceIds.length === 0 || totalFree === 0) return null
 
   const windowMonths = Number(plan.freeServiceValidityMonths) || Number(plan.validityMonths) || 0
