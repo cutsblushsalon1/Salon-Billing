@@ -32,9 +32,35 @@ export async function fetchAppState() {
   }
 }
 
+// Fetches ONE collection fresh from Supabase, bypassing whatever this
+// device already has in memory. Used right before a write that must not
+// clobber changes made from another tab/device (see mergeSaveAppState
+// below) - the one-time pull in fetchAppState() only reflects the state of
+// the world at page load, which can be stale by the time the user acts.
+export async function fetchAppStateKey(key) {
+  if (!isSupabaseConfigured) return undefined
+  try {
+    const { data, error } = await supabase.from('app_state').select('value').eq('key', key).maybeSingle()
+    if (error) throw error
+    return data ? data.value : undefined
+  } catch (err) {
+    console.error(`[supabase] failed to load ${key}:`, err)
+    return undefined
+  }
+}
+
 // Fire-and-forget upsert of one collection, keyed by its STORAGE_KEYS name.
 // Never throws and never blocks the UI - localStorage is still the source
 // of truth on this device if the push fails.
+//
+// IMPORTANT: this REPLACES the entire row for `key` with `value`. It's only
+// safe to call with a value that was built from a fresh fetchAppStateKey()
+// read (or a value the user explicitly intends as a full overwrite, like a
+// backup restore). Calling it with a collection that was only ever loaded
+// once at page-mount time is how bills silently vanish: two devices each
+// hold their own stale in-memory copy, and whichever one saves last wins,
+// erasing anything the other created in between. See createBill/updateBill/
+// deleteBill in AppContext.jsx for the merge-before-write pattern.
 export async function saveAppState(key, value) {
   if (!isSupabaseConfigured) return
   try {

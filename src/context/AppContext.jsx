@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { seedServices, seedProducts, seedStaff, seedTemplates, seedMembershipPlans, defaultSettings } from '../data/seed.js'
 import { uid, buildInvoiceNumber } from '../utils/helpers.js'
 import { pushInvoiceToSupabase } from '../utils/invoiceSync.js'
-import { fetchAppState, saveAppState } from '../lib/appStateSync.js'
+import { fetchAppState, fetchAppStateKey, saveAppState } from '../lib/appStateSync.js'
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient.js'
 import { fetchAppointments, updateAppointmentStatus, deleteAppointmentRemote, subscribeToAppointments } from '../utils/appointmentsSync.js'
 import { pushPublicCatalog } from '../utils/publicCatalogSync.js'
@@ -193,7 +193,16 @@ export function AppProvider({ children }) {
   }, [followUps, hydrated])
   useEffect(() => {
     saveJSON(STORAGE_KEYS.bills, bills)
-    if (hydrated) saveAppState('bills', bills)
+    // NOTE: deliberately NOT calling saveAppState('bills', bills) here.
+    // This effect fires on every local `bills` change, and this device's
+    // in-memory `bills` array only reflects Supabase as of the last mount
+    // (or the last merge below) - if another tab/device created a bill
+    // since then, blindly pushing this array would overwrite (delete) it.
+    // createBill/updateBill/deleteBill each do a fetch-fresh-then-merge
+    // write to Supabase instead (see below), which is safe regardless of
+    // how stale this device's local copy is. restoreBackup() below also
+    // pushes explicitly, since a backup restore IS meant to be a full
+    // overwrite.
   }, [bills, hydrated])
   useEffect(() => {
     saveJSON(STORAGE_KEYS.settings, settings)
@@ -349,6 +358,90 @@ export function AppProvider({ children }) {
   }, [])
 
   // ---- Bills ----
+  // These three helpers are what actually keep Supabase in sync for bills.
+  // Each one re-fetches the CURRENT remote `bills` (and, for creates,
+  // `settings`) right before writing, merges in just the one change this
+  // device is making, and writes that merged result back - instead of
+  // pushing whatever this device's local `bills` state happens to be. That
+  // fetch-merge-write is what stops a device that's been open for hours
+  // (and hasn't seen bills created elsewhere since) from overwriting/
+  // deleting other people's newer bills when it finally saves.
+  const syncNewBillToRemote = useCallback(async (bill, settingsAtCreation) => {
+    if (!isSupabaseConfigured) return
+    try {
+      const [remoteBillsRaw, remoteSettingsRaw] = await Promise.all([
+        fetchAppStateKey('bills'),
+        fetchAppStateKey('settings'),
+      ])
+      const remoteBills = Array.isArray(remoteBillsRaw) ? remoteBillsRaw : []
+      const remoteSettings = remoteSettingsRaw || settingsAtCreation
+
+      // Extremely unlikely, but if another device generated the same
+      // invoice number in the meantime (e.g. both started from the same
+      // stale counter), mint a fresh one now rather than saving a
+      // duplicate billNo.
+      const billNoTaken = remoteBills.some((b) => b.id !== bill.id && b.billNo === bill.billNo)
+      const remoteCounter = Number(remoteSettings.invoiceCounter) || 0
+      const localCounter = Number(settingsAtCreation.invoiceCounter) || 0
+      const nextCounter = Math.max(remoteCounter, localCounter) + 1
+      const finalBill = billNoTaken
+        ? { ...bill, billNo: buildInvoiceNumber(settingsAtCreation.invoicePrefix, Math.max(remoteCounter, localCounter)) }
+        : bill
+
+      // Remote is the authoritative list of everyone else's bills - just
+      // add this one bill to it, don't replace it with this device's copy.
+      const mergedBills = [finalBill, ...remoteBills.filter((b) => b.id !== finalBill.id)]
+      await saveAppState('bills', mergedBills)
+      await saveAppState('settings', { ...remoteSettings, invoiceCounter: nextCounter })
+
+      // Reconcile local state: pick up any bills created elsewhere since
+      // this device last synced, keep any not-yet-synced local bills, and
+      // fix this bill's number locally if it had to be regenerated above.
+      setBills((prevLocal) => {
+        const localOnly = prevLocal.filter((b) => b.id !== bill.id && !remoteBills.some((rb) => rb.id === b.id))
+        return [finalBill, ...localOnly, ...remoteBills.filter((b) => b.id !== finalBill.id)]
+      })
+      setSettings((prev) => ({ ...prev, invoiceCounter: Math.max(Number(prev.invoiceCounter) || 0, nextCounter) }))
+    } catch (err) {
+      console.error('[supabase] failed to merge-sync new bill:', err)
+    }
+  }, [])
+
+  const syncBillUpdateToRemote = useCallback(async (updatedBill) => {
+    if (!isSupabaseConfigured) return
+    try {
+      const remoteBillsRaw = await fetchAppStateKey('bills')
+      const remoteBills = Array.isArray(remoteBillsRaw) ? remoteBillsRaw : []
+      const found = remoteBills.some((b) => b.id === updatedBill.id)
+      const mergedBills = found
+        ? remoteBills.map((b) => (b.id === updatedBill.id ? updatedBill : b))
+        : [updatedBill, ...remoteBills]
+      await saveAppState('bills', mergedBills)
+      setBills((prevLocal) => {
+        const localOnly = prevLocal.filter((b) => b.id !== updatedBill.id && !mergedBills.some((rb) => rb.id === b.id))
+        return [...localOnly, ...mergedBills]
+      })
+    } catch (err) {
+      console.error('[supabase] failed to merge-sync bill update:', err)
+    }
+  }, [])
+
+  const syncBillDeleteToRemote = useCallback(async (id) => {
+    if (!isSupabaseConfigured) return
+    try {
+      const remoteBillsRaw = await fetchAppStateKey('bills')
+      const remoteBills = Array.isArray(remoteBillsRaw) ? remoteBillsRaw : []
+      const mergedBills = remoteBills.filter((b) => b.id !== id)
+      await saveAppState('bills', mergedBills)
+      setBills((prevLocal) => {
+        const localOnly = prevLocal.filter((b) => b.id !== id && !remoteBills.some((rb) => rb.id === b.id))
+        return [...localOnly, ...mergedBills]
+      })
+    } catch (err) {
+      console.error('[supabase] failed to merge-sync bill delete:', err)
+    }
+  }, [])
+
   const createBill = useCallback(
     (billDraft) => {
       const billNo = buildInvoiceNumber(settings.invoicePrefix, settings.invoiceCounter)
@@ -388,14 +481,19 @@ export function AppProvider({ children }) {
       // the UI - the bill is already saved locally either way.
       pushInvoiceToSupabase(bill, settings)
 
+      // Merge-safe push to the shared `bills`/`settings` rows (see
+      // syncNewBillToRemote above) - fire-and-forget, doesn't block the UI.
+      syncNewBillToRemote(bill, settings)
+
       return bill
     },
-    [settings],
+    [settings, syncNewBillToRemote],
   )
 
   const deleteBill = useCallback((id) => {
     setBills((prev) => prev.filter((b) => b.id !== id))
-  }, [])
+    syncBillDeleteToRemote(id)
+  }, [syncBillDeleteToRemote])
 
   // Edits an existing bill in place. Takes the full old bill (as currently
   // displayed) plus a patch of changed fields, and reconciles the knock-on
@@ -440,8 +538,12 @@ export function AppProvider({ children }) {
     // Keep the shared invoice link in sync with the edited bill.
     pushInvoiceToSupabase(updatedBill, settings)
 
+    // Merge-safe push to the shared `bills` row (see syncBillUpdateToRemote
+    // above) - fire-and-forget, doesn't block the UI.
+    syncBillUpdateToRemote(updatedBill)
+
     return updatedBill
-  }, [settings])
+  }, [settings, syncBillUpdateToRemote])
 
   // ---- Settings ----
   const updateSettings = useCallback((patch) => {
@@ -550,11 +652,18 @@ export function AppProvider({ children }) {
     if (data.attendance) setAttendance(data.attendance)
     if (data.templates) setTemplates(data.templates)
     if (data.followUps) setFollowUps(data.followUps)
-    if (data.bills) setBills(data.bills)
+    if (data.bills) {
+      setBills(data.bills)
+      // `bills` is intentionally excluded from the generic auto-sync effect
+      // (see the comment on that effect) since it must never be pushed from
+      // a possibly-stale in-memory copy. A restore IS meant to be a full,
+      // deliberate overwrite, so push it explicitly here.
+      if (hydrated) saveAppState('bills', data.bills)
+    }
     if (data.settings) setSettings(data.settings)
     if (data.membershipPlans) setMembershipPlans(data.membershipPlans)
     if (data.clientMemberships) setClientMemberships(data.clientMemberships)
-  }, [])
+  }, [hydrated])
 
   // Reloads the built-in sample services & products (from src/data/seed.js).
   // Useful when the browser's saved catalog is empty/stale and new sample
