@@ -28,6 +28,16 @@ export default function Settings() {
   const [confirmResetCatalog, setConfirmResetCatalog] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [publishResult, setPublishResult] = useState(null)
+  const [ntfyCopied, setNtfyCopied] = useState(false)
+
+  const NTFY_TOPIC = 'CutsBlushSalonAppointmentsNotification'
+
+  function handleCopyNtfyTopic() {
+    navigator.clipboard?.writeText(NTFY_TOPIC).then(() => {
+      setNtfyCopied(true)
+      setTimeout(() => setNtfyCopied(false), 2000)
+    })
+  }
 
   async function handlePublishCatalog() {
     setPublishing(true)
@@ -430,6 +440,39 @@ export default function Settings() {
           Still not showing on the website? Double check: (1) the site's own <code>.env</code> has the exact same
           Supabase URL/key as this app, (2) you've run <code>supabase/public_catalog.sql</code> in the Supabase SQL
           editor, and (3) the website was rebuilt/redeployed after that <code>.env</code> was added.
+        </p>
+      </section>
+
+      {/* Push notifications */}
+      <section className="card p-5 sm:p-6 mt-6">
+        <div className="flex items-center gap-2 mb-4">
+          <Bell size={17} className="text-plum" />
+          <p className="font-display text-lg text-ink">Push notifications (ntfy)</p>
+        </div>
+        <p className="text-sm text-muted mb-4">
+          Every new appointment — booked on the website or added here — pushes an instant phone notification via{' '}
+          <a href="https://ntfy.sh" target="_blank" rel="noreferrer" className="underline">
+            ntfy
+          </a>
+          , even if this app isn't open. Install the free ntfy app (iOS/Android), then subscribe to this topic:
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <code className="rounded-lg bg-sand/60 px-3 py-2 text-sm text-ink">{NTFY_TOPIC}</code>
+          <button onClick={handleCopyNtfyTopic} className="btn-ghost">
+            {ntfyCopied ? (
+              <>
+                <Check size={15} /> Copied
+              </>
+            ) : (
+              'Copy topic'
+            )}
+          </button>
+        </div>
+        <p className="text-xs text-muted mt-4">
+          This is a public ntfy.sh topic — treat the name itself as the "password": anyone who knows it can read
+          these notifications, so don't post it publicly. For extra privacy, open{' '}
+          <code>supabase/appointment_notifications.sql</code>, change <code>ntfy_topic</code> to something private,
+          re-run it in the Supabase SQL editor, then subscribe to the new name instead.
         </p>
       </section>
 
