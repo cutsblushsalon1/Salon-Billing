@@ -14,8 +14,10 @@ export default function Settings() {
     updateLogin,
     templates,
     publishServiceCatalog,
+    publishStaffRoster,
     isSupabaseConfigured,
     services,
+    staff,
   } = useApp()
   const [form, setForm] = useState(settings)
   const [savedFlash, setSavedFlash] = useState(false)
@@ -28,6 +30,8 @@ export default function Settings() {
   const [confirmResetCatalog, setConfirmResetCatalog] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [publishResult, setPublishResult] = useState(null)
+  const [publishingStaff, setPublishingStaff] = useState(false)
+  const [publishStaffResult, setPublishStaffResult] = useState(null)
   const [ntfyCopied, setNtfyCopied] = useState(false)
 
   const NTFY_TOPIC = 'CutsBlushSalonAppointmentsNotification'
@@ -45,6 +49,14 @@ export default function Settings() {
     const result = await publishServiceCatalog()
     setPublishing(false)
     setPublishResult(result)
+  }
+
+  async function handlePublishStaff() {
+    setPublishingStaff(true)
+    setPublishStaffResult(null)
+    const result = await publishStaffRoster()
+    setPublishingStaff(false)
+    setPublishStaffResult(result)
   }
 
   function handleSaveProfile() {
@@ -409,9 +421,10 @@ export default function Settings() {
           <p className="font-display text-lg text-ink">Booking website sync</p>
         </div>
         <p className="text-sm text-muted mb-4">
-          Your salon website reads its service list from Supabase, not from this browser directly. It updates
-          automatically whenever you add, edit, or remove a service — this button just lets you force it right now,
-          e.g. right after setting up Supabase, or to check the connection is working.
+          Your salon website reads its service list — and, for the "choose your staff" option, an active-staff
+          roster (names &amp; roles only, never phone numbers or pay) — from Supabase, not from this browser
+          directly. Both update automatically whenever you change services or staff — these buttons just let you
+          force it right now, e.g. right after setting up Supabase, or to check the connection is working.
         </p>
         <div className="flex items-center gap-2 mb-3">
           <span
@@ -436,9 +449,23 @@ export default function Settings() {
               : `Failed to publish: ${publishResult.error}`}
           </p>
         )}
+        <div className="flex flex-wrap items-center gap-3 mt-4 pt-4 border-t border-black/5">
+          <button onClick={handlePublishStaff} className="btn-ghost" disabled={publishingStaff || !isSupabaseConfigured}>
+            <RefreshCw size={15} className={publishingStaff ? 'animate-spin' : ''} /> {publishingStaff ? 'Publishing…' : 'Publish staff now'}
+          </button>
+          <span className="text-xs text-muted">{staff.filter((s) => s.active).length} active staff shown to clients</span>
+        </div>
+        {publishStaffResult && (
+          <p className={`text-xs mt-3 ${publishStaffResult.ok ? 'text-success' : 'text-danger'}`}>
+            {publishStaffResult.ok
+              ? 'Published. Refresh the booking page on your website to see it.'
+              : `Failed to publish: ${publishStaffResult.error}`}
+          </p>
+        )}
         <p className="text-xs text-muted mt-4">
           Still not showing on the website? Double check: (1) the site's own <code>.env</code> has the exact same
-          Supabase URL/key as this app, (2) you've run <code>supabase/public_catalog.sql</code> in the Supabase SQL
+          Supabase URL/key as this app, (2) you've run <code>supabase/public_catalog.sql</code>,{' '}
+          <code>supabase/appointments.sql</code> and <code>supabase/staff_availability.sql</code> in the Supabase SQL
           editor, and (3) the website was rebuilt/redeployed after that <code>.env</code> was added.
         </p>
       </section>

@@ -102,6 +102,7 @@ export default function Appointments() {
                 <tr>
                   <th className="text-left px-5 py-3 font-semibold">Client</th>
                   <th className="text-left px-5 py-3 font-semibold">Service</th>
+                  <th className="text-left px-5 py-3 font-semibold">Staff</th>
                   <th className="text-left px-5 py-3 font-semibold">Date &amp; time</th>
                   <th className="text-left px-5 py-3 font-semibold">Status</th>
                   <th className="text-right px-5 py-3 font-semibold">Actions</th>
@@ -119,6 +120,9 @@ export default function Appointments() {
                       )}
                     </td>
                     <td className="px-5 py-3.5 text-muted">{a.service_name || '—'}</td>
+                    <td className="px-5 py-3.5 text-muted">
+                      {a.staff_name || <span className="text-black/30">No preference</span>}
+                    </td>
                     <td className="px-5 py-3.5 text-muted">
                       {formatDate(a.appointment_date)}
                       {a.appointment_time && <span className="block text-xs">{a.appointment_time}</span>}

@@ -8,6 +8,7 @@ declare
 begin
   msg := coalesce(new.client_name, 'A customer') || ' wants ' || coalesce(new.service_name, 'a service')
     || case when new.gender is not null then ' (for ' || new.gender || ')' else '' end
+    || case when new.staff_name is not null then ' with ' || new.staff_name else '' end
     || ' on ' || to_char(new.appointment_date, 'DD Mon YYYY')
     || coalesce(' at ' || new.appointment_time, '')
     || '. Phone: ' || coalesce(new.phone, 'not given');
@@ -33,10 +34,3 @@ create trigger trg_notify_new_appointment
   after insert on appointments
   for each row
   execute function notify_new_appointment();
-
--- To receive these on your phone: install the ntfy app (ntfy.sh, iOS/
--- Android) and subscribe to the topic above. Anyone who knows a public
--- ntfy.sh topic name can read/post to it, so if that matters to you,
--- rename `ntfy_topic` here to something private/unguessable (and re-run
--- this file), or self-host ntfy and change the url above to your own
--- server.

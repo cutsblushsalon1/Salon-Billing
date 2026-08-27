@@ -177,7 +177,17 @@ export function AppProvider({ children }) {
   }, [products, hydrated])
   useEffect(() => {
     saveJSON(STORAGE_KEYS.staff, staff)
-    if (hydrated) saveAppState('staff', staff)
+    if (hydrated) {
+      saveAppState('staff', staff)
+      // Publish only a privacy-safe subset (id/name/role, active staff
+      // only) to the public catalog so the booking website can offer a
+      // "choose your staff" option without ever exposing phone numbers,
+      // salaries, or commission rates to anonymous visitors.
+      pushPublicCatalog(
+        'staff',
+        staff.filter((s) => s.active).map((s) => ({ id: s.id, name: s.name, role: s.role })),
+      )
+    }
   }, [staff, hydrated])
   useEffect(() => {
     saveJSON(STORAGE_KEYS.attendance, attendance)
@@ -626,6 +636,17 @@ export function AppProvider({ children }) {
   // push, or the table/policies were only just set up in Supabase.
   const publishServiceCatalog = useCallback(() => pushPublicCatalog('services', services), [services])
 
+  // Same idea as publishServiceCatalog, for the privacy-safe staff roster
+  // (see the effect above for exactly which fields get published).
+  const publishStaffRoster = useCallback(
+    () =>
+      pushPublicCatalog(
+        'staff',
+        staff.filter((s) => s.active).map((s) => ({ id: s.id, name: s.name, role: s.role })),
+      ),
+    [staff],
+  )
+
   // ---- Backup / Restore ----
   const exportBackup = useCallback(() => {
     return {
@@ -726,6 +747,7 @@ export function AppProvider({ children }) {
     markAppointmentStatus,
     removeAppointment,
     publishServiceCatalog,
+    publishStaffRoster,
     isSupabaseConfigured,
   }
 
