@@ -37,6 +37,7 @@ const STORAGE_KEYS = {
   templates: 'salon_templates',
   followUps: 'salon_followups',
   bills: 'salon_bills',
+  expenses: 'salon_expenses',
   settings: 'salon_settings',
   membershipPlans: 'salon_membership_plans',
   clientMemberships: 'salon_client_memberships',
@@ -78,6 +79,7 @@ export function AppProvider({ children }) {
   const [templates, setTemplates] = useState(() => loadJSON(STORAGE_KEYS.templates, seedTemplates))
   const [followUps, setFollowUps] = useState(() => loadJSON(STORAGE_KEYS.followUps, []))
   const [bills, setBills] = useState(() => loadJSON(STORAGE_KEYS.bills, []))
+  const [expenses, setExpenses] = useState(() => loadJSON(STORAGE_KEYS.expenses, []))
   const [settings, setSettings] = useState(() => loadJSON(STORAGE_KEYS.settings, defaultSettings))
   const [membershipPlans, setMembershipPlans] = useState(() => loadJSON(STORAGE_KEYS.membershipPlans, seedMembershipPlans))
   const [clientMemberships, setClientMemberships] = useState(() => loadJSON(STORAGE_KEYS.clientMemberships, []))
@@ -113,6 +115,7 @@ export function AppProvider({ children }) {
       if (remote.templates) setTemplates(remote.templates)
       if (remote.followUps) setFollowUps(remote.followUps)
       if (remote.bills) setBills(remote.bills)
+      if (remote.expenses) setExpenses(remote.expenses)
       if (remote.settings) setSettings(remote.settings)
       if (remote.membershipPlans) setMembershipPlans(remote.membershipPlans)
       if (remote.clientMemberships) setClientMemberships(remote.clientMemberships)
@@ -201,6 +204,10 @@ export function AppProvider({ children }) {
     saveJSON(STORAGE_KEYS.followUps, followUps)
     if (hydrated) saveAppState('followUps', followUps)
   }, [followUps, hydrated])
+  useEffect(() => {
+    saveJSON(STORAGE_KEYS.expenses, expenses)
+    if (hydrated) saveAppState('expenses', expenses)
+  }, [expenses, hydrated])
   useEffect(() => {
     saveJSON(STORAGE_KEYS.bills, bills)
     // NOTE: deliberately NOT calling saveAppState('bills', bills) here.
@@ -452,6 +459,95 @@ export function AppProvider({ children }) {
     }
   }, [])
 
+  // ---- Expenses ----
+  // Expenses are stored in the same shared app_state table as the other
+  // salon collections. Writes re-fetch the remote collection first so edits
+  // or deletes from another device are not accidentally overwritten.
+  const syncExpenseCreateToRemote = useCallback(async (expense) => {
+    if (!isSupabaseConfigured) return
+    try {
+      const remoteRaw = await fetchAppStateKey('expenses')
+      const remote = Array.isArray(remoteRaw) ? remoteRaw : []
+      const merged = remote.some((e) => e.id === expense.id) ? remote : [expense, ...remote]
+      await saveAppState('expenses', merged)
+      setExpenses((prev) => {
+        const remoteIds = new Set(merged.map((e) => e.id))
+        const localOnly = prev.filter((e) => !remoteIds.has(e.id))
+        return [...localOnly, ...merged]
+      })
+    } catch (err) {
+      console.error('[supabase] failed to merge-sync new expense:', err)
+    }
+  }, [])
+
+  const syncExpenseUpdateToRemote = useCallback(async (updatedExpense) => {
+    if (!isSupabaseConfigured) return
+    try {
+      const remoteRaw = await fetchAppStateKey('expenses')
+      const remote = Array.isArray(remoteRaw) ? remoteRaw : []
+      const merged = remote.some((e) => e.id === updatedExpense.id)
+        ? remote.map((e) => (e.id === updatedExpense.id ? updatedExpense : e))
+        : [updatedExpense, ...remote]
+      await saveAppState('expenses', merged)
+      setExpenses((prev) => {
+        const localOnly = prev.filter((e) => e.id !== updatedExpense.id && !merged.some((re) => re.id === e.id))
+        return [...localOnly, ...merged]
+      })
+    } catch (err) {
+      console.error('[supabase] failed to merge-sync expense update:', err)
+    }
+  }, [])
+
+  const syncExpenseDeleteToRemote = useCallback(async (id) => {
+    if (!isSupabaseConfigured) return
+    try {
+      const remoteRaw = await fetchAppStateKey('expenses')
+      const remote = Array.isArray(remoteRaw) ? remoteRaw : []
+      const merged = remote.filter((e) => e.id !== id)
+      await saveAppState('expenses', merged)
+      setExpenses((prev) => {
+        const localOnly = prev.filter((e) => e.id !== id && !remote.some((re) => re.id === e.id))
+        return [...localOnly, ...merged]
+      })
+    } catch (err) {
+      console.error('[supabase] failed to merge-sync expense delete:', err)
+    }
+  }, [])
+
+  const addExpense = useCallback((expenseDraft) => {
+    const expense = {
+      id: uid('expense'),
+      createdAt: new Date().toISOString(),
+      ...expenseDraft,
+      amount: Number(expenseDraft.amount) || 0,
+    }
+    setExpenses((prev) => [expense, ...prev])
+    syncExpenseCreateToRemote(expense)
+    return expense
+  }, [syncExpenseCreateToRemote])
+
+  const updateExpense = useCallback((id, patch) => {
+    setExpenses((prev) => {
+      const existing = prev.find((e) => e.id === id)
+      if (!existing) return prev
+      const updatedExpense = {
+        ...existing,
+        ...patch,
+        id,
+        amount: Number(patch.amount ?? existing.amount) || 0,
+        updatedAt: new Date().toISOString(),
+      }
+      // Start the remote merge from the exact updated record.
+      syncExpenseUpdateToRemote(updatedExpense)
+      return prev.map((e) => (e.id === id ? updatedExpense : e))
+    })
+  }, [syncExpenseUpdateToRemote])
+
+  const deleteExpense = useCallback((id) => {
+    setExpenses((prev) => prev.filter((e) => e.id !== id))
+    syncExpenseDeleteToRemote(id)
+  }, [syncExpenseDeleteToRemote])
+
   const createBill = useCallback(
     (billDraft) => {
       const billNo = buildInvoiceNumber(settings.invoicePrefix, settings.invoiceCounter)
@@ -659,11 +755,12 @@ export function AppProvider({ children }) {
       templates,
       followUps,
       bills,
+      expenses,
       settings,
       membershipPlans,
       clientMemberships,
     }
-  }, [clients, services, products, staff, attendance, templates, followUps, bills, settings, membershipPlans, clientMemberships])
+  }, [clients, services, products, staff, attendance, templates, followUps, bills, expenses, settings, membershipPlans, clientMemberships])
 
   const restoreBackup = useCallback((data) => {
     if (data.clients) setClients(data.clients)
@@ -673,6 +770,7 @@ export function AppProvider({ children }) {
     if (data.attendance) setAttendance(data.attendance)
     if (data.templates) setTemplates(data.templates)
     if (data.followUps) setFollowUps(data.followUps)
+    if (data.expenses) setExpenses(data.expenses)
     if (data.bills) {
       setBills(data.bills)
       // `bills` is intentionally excluded from the generic auto-sync effect
@@ -727,6 +825,10 @@ export function AppProvider({ children }) {
     logFollowUp,
     deleteFollowUp,
     bills,
+    expenses,
+    addExpense,
+    updateExpense,
+    deleteExpense,
     createBill,
     updateBill,
     deleteBill,

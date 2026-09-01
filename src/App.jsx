@@ -12,6 +12,7 @@ import ClientProfile from './pages/ClientProfile.jsx'
 import Staff from './pages/Staff.jsx'
 import FollowUps from './pages/FollowUps.jsx'
 import Reports from './pages/Reports.jsx'
+import Finance from './pages/Finance.jsx'
 import Services from './pages/Services.jsx'
 import Products from './pages/Products.jsx'
 import Memberships from './pages/Memberships.jsx'
@@ -55,6 +56,7 @@ export default function App() {
                 <Route path="/staff" element={<Staff />} />
                 <Route path="/follow-ups" element={<FollowUps />} />
                 <Route path="/reports" element={<Reports />} />
+                <Route path="/finance" element={<Finance />} />
                 <Route path="/services" element={<Services />} />
                 <Route path="/products" element={<Products />} />
                 <Route path="/memberships" element={<Memberships />} />

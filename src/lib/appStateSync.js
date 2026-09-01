@@ -12,6 +12,7 @@ export const SYNC_KEYS = [
   'templates',
   'followUps',
   'bills',
+  'expenses',
   'settings',
   'membershipPlans',
   'clientMemberships',

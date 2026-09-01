@@ -14,6 +14,7 @@ import {
   AlarmClock,
   Crown,
   CalendarClock,
+  Wallet,
 } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 
@@ -27,6 +28,7 @@ const NAV_ITEMS = [
   { to: '/staff', label: 'Staff', icon: Users2 },
   { to: '/follow-ups', label: 'Follow-ups', icon: AlarmClock },
   { to: '/reports', label: 'Reports', icon: BarChart3 },
+  { to: '/finance', label: 'Finance & Profit', icon: Wallet },
   { to: '/services', label: 'Services', icon: Scissors },
   { to: '/products', label: 'Products', icon: Package },
   { to: '/settings', label: 'Settings', icon: SettingsIcon },
