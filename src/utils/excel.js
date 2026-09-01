@@ -63,3 +63,38 @@ export function downloadCatalogExcel({ services, products, currencySymbol = '\u2
   XLSX.writeFile(workbook, filename)
 }
 
+// Exports all clients/contacts to an Excel workbook.
+export function downloadClientsExcel(clients, currencySymbol = '\u20B9', label = 'clients') {
+  const rows = clients.map((c) => ({
+    'Client Name': c.name || '',
+    Phone: c.phone || '',
+    Email: c.email || '',
+    Gender: c.gender || '',
+    Notes: c.notes || '',
+    'Total Spent': Number(c.totalSpent || 0),
+    'Total Spent (formatted)': formatCurrency(c.totalSpent || 0, currencySymbol),
+    Visits: c.visits?.length || 0,
+    'Last Visit': c.lastVisit ? formatDate(c.lastVisit) : '',
+    'Added On': c.createdAt ? formatDate(c.createdAt) : '',
+  }))
+
+  const worksheet = XLSX.utils.json_to_sheet(rows)
+  worksheet['!cols'] = [
+    { wch: 24 },
+    { wch: 16 },
+    { wch: 30 },
+    { wch: 12 },
+    { wch: 42 },
+    { wch: 14 },
+    { wch: 24 },
+    { wch: 10 },
+    { wch: 16 },
+    { wch: 16 },
+  ]
+
+  const workbook = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Clients')
+
+  const filename = `${label}-${new Date().toISOString().slice(0, 10)}.xlsx`
+  XLSX.writeFile(workbook, filename)
+}

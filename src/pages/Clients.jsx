@@ -11,11 +11,13 @@ import {
   Pencil,
   Trash2,
   Upload,
+  Download,
   Check,
 } from "lucide-react";
 import { useApp } from "../context/AppContext.jsx";
 import { PageHeader, Modal, EmptyState, Badge } from "../components/ui.jsx";
 import { formatCurrency, formatDate, uid } from "../utils/helpers.js";
+import { downloadClientsExcel } from "../utils/excel.js";
 
 // Accepts common header spellings from exported spreadsheets, case-insensitive
 const HEADER_ALIASES = {
@@ -158,6 +160,10 @@ export default function Clients() {
     setModalOpen(true);
   }
 
+  function handleExport() {
+    downloadClientsExcel(clients, settings.currencySymbol, "clients");
+  }
+
   function handleSave() {
     if (!form.name.trim()) return;
     upsertClient({ id: editingId || uid("cli"), ...form });
@@ -172,6 +178,9 @@ export default function Clients() {
         subtitle={`${clients.length} client${clients.length === 1 ? "" : "s"} on file`}
         actions={
           <>
+            <button className="btn-ghost" onClick={handleExport}>
+              <Download size={16} /> Export .xlsx
+            </button>
             <button
               className="btn-ghost"
               onClick={() => fileInputRef.current?.click()}
