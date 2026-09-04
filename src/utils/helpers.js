@@ -93,6 +93,47 @@ export function whatsappLink(phone, message) {
   return `https://wa.me/${withCountry}?text=${encodeURIComponent(message)}`
 }
 
+// Same 10-digit-local -> +91 assumption as whatsappLink, but returns
+// E.164 (leading +) instead of a wa.me path segment - what the WhatsApp
+// Cloud API / the CRM's public API expects for the "to" field.
+export function formatPhoneE164(phone) {
+  const cleanPhone = (phone || '').replace(/[^0-9]/g, '')
+  const withCountry = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone
+  return withCountry ? `+${withCountry}` : ''
+}
+
+// Renders the invoice date the way the approved WhatsApp template
+// expects it, e.g. "3 Sept 2026" - day without a leading zero, unlike
+// formatDate() elsewhere in the app which pads it for table columns.
+export function formatInvoiceTemplateDate(dateStr) {
+  const d = new Date(dateStr)
+  const day = d.getDate()
+  const month = d.toLocaleDateString('en-IN', { month: 'short' })
+  const year = d.getFullYear()
+  // en-IN gives "Sep"; the approved template copy uses "Sept".
+  const monthLabel = month === 'Sep' ? 'Sept' : month
+  return `${day} ${monthLabel} ${year}`
+}
+
+// Builds the dynamic values for the approved "invoice created" WhatsApp
+// template (see Settings > Invoice WhatsApp sending for the template
+// copy) directly from the bill, so every field is generated from real
+// invoice data rather than typed in anywhere:
+//   {{1}} name, {{2}} invoice number, {{3}} date, {{4}} total paid
+// plus the "View Invoice" button's {{1}}, which is the invoice number
+// appended to the button's base URL.
+export function buildInvoiceTemplateParams(settings, bill) {
+  const name = bill.client?.name || 'there'
+  const invoiceNo = bill.billNo
+  const date = formatInvoiceTemplateDate(bill.date)
+  const totalPaid = formatCurrency(bill.total, settings.currencySymbol)
+  return {
+    body: [name, invoiceNo, date, totalPaid],
+    // Button index 0 = the single "View Invoice" URL button.
+    buttonParams: { 0: invoiceNo },
+  }
+}
+
 export function daysSince(dateStr) {
   const start = new Date(dateStr)
   start.setHours(0, 0, 0, 0)

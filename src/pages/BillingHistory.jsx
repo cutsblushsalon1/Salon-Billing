@@ -1,10 +1,11 @@
 import React, { useMemo, useState } from 'react'
-import { Search, Eye, Printer, Download, Share2, Trash2, Receipt, CalendarRange, X, Pencil } from 'lucide-react'
+import { Search, Eye, Printer, Download, Trash2, Receipt, CalendarRange, X, Pencil } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, Modal, EmptyState, Badge } from '../components/ui.jsx'
 import BillPreview from '../components/BillPreview.jsx'
 import EditBillModal from '../components/EditBillModal.jsx'
-import { formatCurrency, formatDateTime, isInRange, whatsappInvoiceMessage, whatsappLink, getBillStaffNames } from '../utils/helpers.js'
+import InvoiceWhatsAppButton from '../components/InvoiceWhatsAppButton.jsx'
+import { formatCurrency, formatDateTime, isInRange, getBillStaffNames } from '../utils/helpers.js'
 import { downloadBillPDF } from '../utils/pdf.js'
 
 const PAYMENT_FILTERS = ['All', 'Cash', 'Card', 'UPI', 'Wallet']
@@ -139,17 +140,7 @@ export default function BillingHistory() {
                         <button onClick={() => downloadBillPDF(b, settings)} className="p-1.5 text-muted hover:text-plum" title="Download PDF">
                           <Download size={15} />
                         </button>
-                        {b.client?.phone && (
-                          <a
-                            href={whatsappLink(b.client.phone, whatsappInvoiceMessage(settings, b))}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="p-1.5 text-muted hover:text-success"
-                            title="Share on WhatsApp"
-                          >
-                            <Share2 size={15} />
-                          </a>
-                        )}
+                        <InvoiceWhatsAppButton bill={b} settings={settings} variant="icon" />
                         <button onClick={() => setConfirmDelete(b)} className="p-1.5 text-muted hover:text-danger" title="Delete">
                           <Trash2 size={15} />
                         </button>
@@ -186,16 +177,7 @@ export default function BillingHistory() {
               >
                 <Pencil size={15} /> Edit bill
               </button>
-              {viewBill.client?.phone && (
-                <a
-                  href={whatsappLink(viewBill.client.phone, whatsappInvoiceMessage(settings, viewBill))}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="btn-brass"
-                >
-                  <Share2 size={15} /> Share on WhatsApp
-                </a>
-              )}
+              <InvoiceWhatsAppButton bill={viewBill} settings={settings} />
             </div>
           </div>
         )}

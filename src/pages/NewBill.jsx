@@ -13,7 +13,6 @@ import {
   Package,
   Printer,
   Download,
-  Share2,
   ReceiptText,
   Check,
   Crown,
@@ -21,13 +20,12 @@ import {
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, Modal, Badge } from '../components/ui.jsx'
 import BillPreview from '../components/BillPreview.jsx'
+import InvoiceWhatsAppButton from '../components/InvoiceWhatsAppButton.jsx'
 import {
   calcBillTotals,
   calcLineTotal,
   formatCurrency,
   formatDate,
-  whatsappInvoiceMessage,
-  whatsappLink,
   findActiveMembership,
   getMembershipDiscountInfo,
   getMembershipFreeServiceInfo,
@@ -710,16 +708,7 @@ export default function NewBill() {
               <button onClick={() => downloadBillPDF(generatedBill, settings)} className="btn-ghost">
                 <Download size={15} /> Download PDF
               </button>
-              {generatedBill.client?.phone && (
-                <a
-                  href={whatsappLink(generatedBill.client.phone, whatsappInvoiceMessage(settings, generatedBill))}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="btn-brass"
-                >
-                  <Share2 size={15} /> Share on WhatsApp
-                </a>
-              )}
+              <InvoiceWhatsAppButton bill={generatedBill} settings={settings} />
               <button onClick={resetForm} className="btn-primary ml-auto">
                 Start new bill
               </button>

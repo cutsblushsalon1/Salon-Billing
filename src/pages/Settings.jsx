@@ -1,7 +1,27 @@
 import React, { useRef, useState } from 'react'
-import { CircleUserRound, ReceiptText, DatabaseBackup, KeyRound, Download, Upload, Check, Bell, Zap, TriangleAlert, RotateCcw, Globe, RefreshCw } from 'lucide-react'
+import {
+  CircleUserRound,
+  ReceiptText,
+  DatabaseBackup,
+  KeyRound,
+  Download,
+  Upload,
+  Check,
+  Bell,
+  Zap,
+  TriangleAlert,
+  RotateCcw,
+  Globe,
+  RefreshCw,
+  MessageCircle,
+  Send,
+  Loader2,
+  CircleCheck,
+  CircleX,
+} from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, Modal } from '../components/ui.jsx'
+import { sendInvoiceViaCloudApi } from '../utils/whatsappCloudApi.js'
 
 export default function Settings() {
   const {
@@ -33,8 +53,32 @@ export default function Settings() {
   const [publishingStaff, setPublishingStaff] = useState(false)
   const [publishStaffResult, setPublishStaffResult] = useState(null)
   const [ntfyCopied, setNtfyCopied] = useState(false)
+  const [testPhone, setTestPhone] = useState('')
+  const [testStatus, setTestStatus] = useState('idle') // idle | sending | sent | error
+  const [testError, setTestError] = useState('')
 
   const NTFY_TOPIC = 'CutsBlushSalonAppointmentsNotification'
+
+  async function handleSendTestInvoice() {
+    setTestStatus('sending')
+    setTestError('')
+    const testBill = {
+      billNo: `${form.invoicePrefix || 'CB'}-TEST`,
+      date: new Date().toISOString(),
+      total: 850,
+      client: { name: 'Test Client', phone: testPhone },
+    }
+    // Force-enable for the test call so you can verify the connection
+    // before flipping the toggle on for real invoices.
+    const result = await sendInvoiceViaCloudApi({ ...settings, ...form, invoiceApiEnabled: true }, testBill)
+    if (result.ok) {
+      setTestStatus('sent')
+      setTimeout(() => setTestStatus('idle'), 4000)
+    } else {
+      setTestStatus('error')
+      setTestError(result.error)
+    }
+  }
 
   function handleCopyNtfyTopic() {
     navigator.clipboard?.writeText(NTFY_TOPIC).then(() => {
@@ -336,6 +380,137 @@ export default function Settings() {
             Provider and sender number are just labels for your own reference — the actual API key lives on your backend, never in
             this browser.
           </p>
+        </div>
+      </section>
+
+      {/* Invoice WhatsApp sending */}
+      <section className="card p-5 sm:p-6 mt-6">
+        <div className="flex items-center gap-2 mb-4">
+          <MessageCircle size={17} className="text-plum" />
+          <p className="font-display text-lg text-ink">Invoice WhatsApp sending</p>
+        </div>
+
+        <label className="flex items-center gap-2.5 text-sm font-medium text-ink mb-3">
+          <input
+            type="checkbox"
+            checked={form.invoiceApiEnabled}
+            onChange={(e) => setForm((s) => ({ ...s, invoiceApiEnabled: e.target.checked }))}
+            className="w-4 h-4 accent-plum"
+          />
+          <Zap size={15} className="text-brass-dark" /> Send invoices automatically via WhatsApp Cloud API
+        </label>
+
+        <div className="flex items-start gap-2.5 p-3 rounded-lg bg-plum/5 text-xs text-ink mb-4">
+          <TriangleAlert size={15} className="text-plum mt-0.5 shrink-0" />
+          <p>
+            Leave this off (default) and "Share on WhatsApp" keeps working the manual way — it opens a pre-filled
+            WhatsApp chat for you to send yourself. Turn it on once you have a WhatsApp Cloud API connection, and the
+            same button instead sends the approved invoice template straight away, with no chat window and no manual
+            step. This app is a browser-only frontend, so the actual Meta connection needs to live on a backend you
+            control — point <span className="font-medium">Base URL</span> below at your WhatsApp CRM deployment
+            (its <span className="font-mono">/api/v1/messages</span> endpoint) and paste an API key created there
+            with the <span className="font-mono">messages:send</span> scope.
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="label">Base URL</label>
+            <input
+              className="input"
+              placeholder="https://your-whatsapp-crm.vercel.app"
+              value={form.invoiceApiBaseUrl}
+              onChange={(e) => setForm((s) => ({ ...s, invoiceApiBaseUrl: e.target.value }))}
+              disabled={!form.invoiceApiEnabled}
+            />
+          </div>
+          <div>
+            <label className="label">API key</label>
+            <input
+              className="input"
+              type="password"
+              placeholder="wacrm_live_..."
+              value={form.invoiceApiKey}
+              onChange={(e) => setForm((s) => ({ ...s, invoiceApiKey: e.target.value }))}
+              disabled={!form.invoiceApiEnabled}
+            />
+            <p className="text-xs text-muted mt-1.5">Created under Account → API keys in your WhatsApp CRM. Needs the "messages:send" scope.</p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="label">Template name</label>
+              <input
+                className="input"
+                value={form.invoiceTemplateName}
+                onChange={(e) => setForm((s) => ({ ...s, invoiceTemplateName: e.target.value }))}
+                disabled={!form.invoiceApiEnabled}
+              />
+              <p className="text-xs text-muted mt-1.5">Must match the name of the approved template exactly (case-sensitive).</p>
+            </div>
+            <div>
+              <label className="label">Template language code</label>
+              <input
+                className="input"
+                placeholder="en"
+                value={form.invoiceTemplateLanguage}
+                onChange={(e) => setForm((s) => ({ ...s, invoiceTemplateLanguage: e.target.value }))}
+                disabled={!form.invoiceApiEnabled}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="border-t border-black/5 mt-5 pt-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted mb-2">Approved template reference</p>
+          <div className="rounded-lg bg-sand/50 px-3 py-3 text-xs text-ink font-mono whitespace-pre-wrap leading-relaxed">
+{`Hello {{1}}, thanks for visiting *${form.salonName || 'Cuts & Blush Unisex Salon'}*.
+
+Your invoice *{{2}}* for *{{3}}* is created.
+
+*Total paid:* {{4}}
+
+You can view detailed invoice using the button below.
+
+Thanks,
+Team ${form.salonName || 'Cuts & Blush Unisex Salon'}
+
+Button — View Invoice → https://cutsblushsalon.vercel.app/invoice/{{1}}`}
+          </div>
+          <p className="text-xs text-muted mt-2">
+            {'{{1}}'} name, {'{{2}}'} invoice number, {'{{3}}'} date, {'{{4}}'} total paid — all four (plus the
+            button's invoice-number suffix) are generated automatically from the bill, never typed in.
+          </p>
+        </div>
+
+        <div className="border-t border-black/5 mt-5 pt-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted mb-2">Test the connection</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              className="input sm:w-56"
+              placeholder="Your WhatsApp number"
+              value={testPhone}
+              onChange={(e) => setTestPhone(e.target.value)}
+            />
+            <button
+              onClick={handleSendTestInvoice}
+              className="btn-ghost"
+              disabled={testStatus === 'sending' || !testPhone.trim() || !form.invoiceApiBaseUrl || !form.invoiceApiKey || !form.invoiceTemplateName}
+            >
+              {testStatus === 'sending' ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+              {testStatus === 'sending' ? 'Sending…' : 'Send test invoice'}
+            </button>
+            {testStatus === 'sent' && (
+              <span className="text-success text-sm font-medium flex items-center gap-1">
+                <CircleCheck size={15} /> Sent — check WhatsApp
+              </span>
+            )}
+          </div>
+          {testStatus === 'error' && (
+            <p className="text-xs text-danger mt-2 flex items-center gap-1">
+              <CircleX size={13} /> {testError}
+            </p>
+          )}
+          <p className="text-xs text-muted mt-2">Sends a real template message with dummy invoice data, using the values above (saved or not).</p>
         </div>
       </section>
 

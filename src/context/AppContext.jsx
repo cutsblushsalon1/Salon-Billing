@@ -80,7 +80,12 @@ export function AppProvider({ children }) {
   const [followUps, setFollowUps] = useState(() => loadJSON(STORAGE_KEYS.followUps, []))
   const [bills, setBills] = useState(() => loadJSON(STORAGE_KEYS.bills, []))
   const [expenses, setExpenses] = useState(() => loadJSON(STORAGE_KEYS.expenses, []))
-  const [settings, setSettings] = useState(() => loadJSON(STORAGE_KEYS.settings, defaultSettings))
+  // Merge over defaultSettings (not just fall back to it) so a
+  // returning user's older localStorage blob - saved before newer
+  // settings fields existed (e.g. the invoice WhatsApp API options)
+  // - still picks up sensible defaults for whatever it's missing,
+  // instead of those fields loading as undefined.
+  const [settings, setSettings] = useState(() => ({ ...defaultSettings, ...loadJSON(STORAGE_KEYS.settings, defaultSettings) }))
   const [membershipPlans, setMembershipPlans] = useState(() => loadJSON(STORAGE_KEYS.membershipPlans, seedMembershipPlans))
   const [clientMemberships, setClientMemberships] = useState(() => loadJSON(STORAGE_KEYS.clientMemberships, []))
 

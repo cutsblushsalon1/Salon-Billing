@@ -455,6 +455,15 @@ export const defaultSettings = {
   followUpApiProvider: '',
   followUpApiKey: '',
   followUpSenderNumber: '',
+  // Invoice WhatsApp sending — off (manual wa.me) by default. When
+  // enabled, invoices are sent through the approved WhatsApp template
+  // via the connected WhatsApp Cloud API backend (see
+  // src/utils/whatsappCloudApi.js) instead of opening a wa.me link.
+  invoiceApiEnabled: false,
+  invoiceApiBaseUrl: '',
+  invoiceApiKey: '',
+  invoiceTemplateName: 'invoice_created',
+  invoiceTemplateLanguage: 'en',
 }
 
 export const seedTemplates = [
