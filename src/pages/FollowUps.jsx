@@ -12,27 +12,25 @@ import {
   Trash2,
   Star,
   Info,
-  ArrowRight,
   SkipForward,
   Zap,
   Loader2,
-  CircleCheck,
-  CircleX,
   Crown,
+  Settings as SettingsIcon,
 } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, Modal, EmptyState, Badge } from '../components/ui.jsx'
-import { formatDate, daysSince, buildFollowUpMessage, whatsappLink, findActiveMembership, getMembershipStatus, uid } from '../utils/helpers.js'
-
-async function sendViaWebhook(url, payload) {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
-  if (!res.ok) throw new Error(`Server responded with ${res.status}`)
-  return true
-}
+import {
+  formatDate,
+  daysSince,
+  buildFollowUpMessage,
+  buildFollowUpSyncedTemplateParams,
+  whatsappLink,
+  findActiveMembership,
+  getMembershipStatus,
+  uid,
+} from '../utils/helpers.js'
+import { sendFollowUpViaCloudApi } from '../utils/whatsappCloudApi.js'
 
 const TABS = [
   { id: 'due', label: 'Due for follow-up', icon: Bell },
@@ -46,6 +44,16 @@ const TOKEN_HELP = [
   ['{daysSinceVisit}', 'Days since their last visit'],
   ['{lastService}', 'The last service they had'],
 ]
+
+// Renders a synced WhatsApp template's approved body text with its
+// mapped values filled in, for on-screen preview only (what actually
+// gets sent is the structured template + params, not this string).
+function previewSyncedTemplateBody(apiTemplate, mapping, client, settings) {
+  if (!apiTemplate) return ''
+  const { body } = buildFollowUpSyncedTemplateParams(client, settings, mapping)
+  let i = 0
+  return apiTemplate.body_text.replace(/\{\{\d+\}\}/g, () => body[i++] ?? '')
+}
 
 export default function FollowUps() {
   const { clients, templates, followUps, settings, clientMemberships } = useApp()
@@ -77,7 +85,7 @@ export default function FollowUps() {
       <PageHeader
         eyebrow="Retention"
         title="Follow-ups"
-        subtitle="Reach out to clients who haven't been in for a while, using your own message templates."
+        subtitle="Reach out to clients who haven't been in for a while, manually with your own templates or automatically via your WhatsApp CRM."
       />
 
       <div className="flex items-center gap-2 mb-6 flex-wrap">
@@ -109,15 +117,22 @@ function DueTab({ dueClients }) {
   const { settings, templates, logFollowUp } = useApp()
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
-  const [templateId, setTemplateId] = useState(settings.followUpDefaultTemplateId || templates[0]?.id || '')
+  const isApiMode = settings.followUpSendMode === 'api'
+
+  const syncedTemplates = settings.followUpSyncedTemplates || []
+  const apiTemplate =
+    syncedTemplates.find((t) => t.id === settings.followUpApiTemplateId) || syncedTemplates[0] || null
+  const apiMapping = apiTemplate ? settings.followUpSyncedTemplateMappings?.[apiTemplate.id] : null
+
+  const manualTemplate = templates.find((t) => t.id === settings.followUpDefaultTemplateId) || templates[0]
+  const [manualTemplateId, setManualTemplateId] = useState(manualTemplate?.id || '')
+  const selectedManualTemplate = templates.find((t) => t.id === manualTemplateId) || manualTemplate
+
   const [selected, setSelected] = useState(new Set())
   const [queueOpen, setQueueOpen] = useState(false)
   const [sendingId, setSendingId] = useState(null)
   const [bulkState, setBulkState] = useState(null) // { total, done, failed }
   const [membersOnly, setMembersOnly] = useState(false)
-
-  const template = templates.find((t) => t.id === templateId) || templates[0]
-  const isAutoMode = settings.followUpAutoEnabled && !!settings.followUpWebhookUrl
 
   const memberDueCount = useMemo(() => dueClients.filter((c) => c.isMember).length, [dueClients])
 
@@ -140,45 +155,74 @@ function DueTab({ dueClients }) {
     setSelected((prev) => (prev.size === filtered.length ? new Set() : new Set(filtered.map((c) => c.id))))
   }
 
-  async function sendOne(client) {
-    if (!template) return
-    const message = buildFollowUpMessage(template, client, settings)
+  function previewFor(client) {
+    if (isApiMode) return previewSyncedTemplateBody(apiTemplate, apiMapping, client, settings)
+    return selectedManualTemplate ? buildFollowUpMessage(selectedManualTemplate, client, settings) : ''
+  }
 
-    if (isAutoMode) {
-      setSendingId(client.id)
-      try {
-        await sendViaWebhook(settings.followUpWebhookUrl, { phone: client.phone, name: client.name, message })
-        logFollowUp({ clientId: client.id, templateId: template.id, templateName: template.name, message, method: 'api' })
-      } catch (err) {
-        alert(`Couldn't send to ${client.name}: ${err.message}`)
-      } finally {
-        setSendingId(null)
-      }
+  async function sendOneApi(client) {
+    setSendingId(client.id)
+    const { body, buttonParams } = buildFollowUpSyncedTemplateParams(client, settings, apiMapping)
+    const result = await sendFollowUpViaCloudApi(settings, { client, template: apiTemplate, body, buttonParams })
+    if (result.ok) {
+      logFollowUp({
+        clientId: client.id,
+        templateId: apiTemplate.id,
+        templateName: apiTemplate.name,
+        message: previewFor(client),
+        method: 'api',
+      })
     } else {
-      window.open(whatsappLink(client.phone, message), '_blank', 'noopener,noreferrer')
-      logFollowUp({ clientId: client.id, templateId: template.id, templateName: template.name, message, method: 'whatsapp' })
+      alert(`Couldn't send to ${client.name}: ${result.error}`)
+    }
+    setSendingId(null)
+  }
+
+  function sendOneManual(client) {
+    const message = buildFollowUpMessage(selectedManualTemplate, client, settings)
+    window.open(whatsappLink(client.phone, message), '_blank', 'noopener,noreferrer')
+    logFollowUp({ clientId: client.id, templateId: selectedManualTemplate.id, templateName: selectedManualTemplate.name, message, method: 'whatsapp' })
+  }
+
+  function sendOne(client) {
+    if (isApiMode) {
+      if (!apiTemplate) return
+      sendOneApi(client)
+    } else {
+      if (!selectedManualTemplate) return
+      sendOneManual(client)
     }
   }
 
   function markContacted(client) {
+    const message = previewFor(client)
+    const template = isApiMode ? apiTemplate : selectedManualTemplate
     if (!template) return
-    const message = buildFollowUpMessage(template, client, settings)
     logFollowUp({ clientId: client.id, templateId: template.id, templateName: template.name, message, method: 'manual' })
   }
 
-  async function sendBulk(targets) {
-    if (!template || targets.length === 0) return
+  // Genuine one-click batch send - only available in API mode, since
+  // manual mode has to open one WhatsApp chat per client (see
+  // SendQueueModal below).
+  async function sendBulkApi(targets) {
+    if (!apiTemplate || targets.length === 0) return
     setBulkState({ total: targets.length, done: 0, failed: 0 })
     for (const client of targets) {
-      const message = buildFollowUpMessage(template, client, settings)
-      try {
-        await sendViaWebhook(settings.followUpWebhookUrl, { phone: client.phone, name: client.name, message })
-        logFollowUp({ clientId: client.id, templateId: template.id, templateName: template.name, message, method: 'api' })
+      const { body, buttonParams } = buildFollowUpSyncedTemplateParams(client, settings, apiMapping)
+      const result = await sendFollowUpViaCloudApi(settings, { client, template: apiTemplate, body, buttonParams })
+      if (result.ok) {
+        logFollowUp({
+          clientId: client.id,
+          templateId: apiTemplate.id,
+          templateName: apiTemplate.name,
+          message: previewFor(client),
+          method: 'api',
+        })
         setBulkState((s) => ({ ...s, done: s.done + 1 }))
-      } catch {
+      } else {
         setBulkState((s) => ({ ...s, done: s.done + 1, failed: s.failed + 1 }))
       }
-      // Small gap between calls so a slow backend or rate limit isn't hammered
+      // Small gap between calls so the CRM isn't hammered.
       await new Promise((r) => setTimeout(r, 250))
     }
     setSelected(new Set())
@@ -186,8 +230,8 @@ function DueTab({ dueClients }) {
 
   function handleSendSelected() {
     const targets = filtered.filter((c) => selected.has(c.id))
-    if (isAutoMode) {
-      sendBulk(targets)
+    if (isApiMode) {
+      sendBulkApi(targets)
     } else {
       setQueueOpen(true)
     }
@@ -208,33 +252,39 @@ function DueTab({ dueClients }) {
     )
   }
 
-  if (templates.length === 0) {
+  if (isApiMode && !apiTemplate) {
+    return (
+      <EmptyState
+        icon={SettingsIcon}
+        title="No synced WhatsApp template selected"
+        subtitle="Automatic sending is on, but there's no synced template to send yet. Go to Settings → Follow-up reminders, sync your WhatsApp CRM templates, and set one as default."
+        action={
+          <button className="btn-primary" onClick={() => navigate('/settings')}>
+            Go to Settings
+          </button>
+        }
+      />
+    )
+  }
+
+  if (!isApiMode && templates.length === 0) {
     return (
       <EmptyState
         icon={MessageSquareText}
         title="No message templates yet"
-        subtitle="Create at least one template to start sending follow-ups."
+        subtitle="Create at least one template on the Templates tab to start sending follow-ups."
       />
     )
   }
 
   return (
     <div className="space-y-4">
-      {settings.followUpAutoEnabled && !settings.followUpWebhookUrl && (
-        <div className="card p-4 flex items-start gap-2.5 bg-danger/5 border-danger/15">
-          <Info size={15} className="text-danger mt-0.5 shrink-0" />
-          <p className="text-xs text-ink">
-            Automatic sending is turned on in Settings, but no webhook URL is set yet — sends below will use manual WhatsApp for now.
-            Add a webhook URL in <span className="font-medium">Settings → Follow-up reminders</span> to switch this on.
-          </p>
-        </div>
-      )}
-
-      {isAutoMode && (
+      {isApiMode && (
         <div className="card p-4 flex items-center gap-2.5 bg-brass/10 border-brass/20">
           <Zap size={15} className="text-brass-dark shrink-0" />
           <p className="text-xs text-ink">
-            Automatic sending is on — messages go out through your connected API instead of opening WhatsApp.
+            Automatic sending is on — messages go out through your WhatsApp CRM using{' '}
+            <span className="font-medium">{apiTemplate.name}</span>, with no manual step.
           </p>
         </div>
       )}
@@ -285,19 +335,26 @@ function DueTab({ dueClients }) {
           <Crown size={13} /> Members
           {memberDueCount > 0 && <span className="tabular">({memberDueCount})</span>}
         </button>
-        <select className="input sm:w-64" value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
-          {templates.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name} {t.isDefault ? '(default)' : ''}
-            </option>
-          ))}
-        </select>
+        {isApiMode ? (
+          <div className="input sm:w-64 flex items-center gap-1.5 text-ink bg-black/[0.02]" title="Change the default synced template in Settings → Follow-up reminders">
+            <Star size={13} className="text-brass fill-brass shrink-0" />
+            <span className="truncate">{apiTemplate?.name}</span>
+          </div>
+        ) : (
+          <select className="input sm:w-64" value={manualTemplateId} onChange={(e) => setManualTemplateId(e.target.value)}>
+            {templates.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name} {t.isDefault ? '(default)' : ''}
+              </option>
+            ))}
+          </select>
+        )}
         <button onClick={handleSendSelected} disabled={selected.size === 0} className="btn-brass shrink-0">
           <Send size={15} /> Send to selected ({selected.size})
         </button>
-        {isAutoMode && (
+        {isApiMode && (
           <button
-            onClick={() => sendBulk(filtered)}
+            onClick={() => sendBulkApi(filtered)}
             disabled={filtered.length === 0 || (bulkState && bulkState.done < bulkState.total)}
             className="btn-primary shrink-0"
           >
@@ -331,7 +388,7 @@ function DueTab({ dueClients }) {
           </div>
           <div className="divide-y divide-black/5">
             {filtered.map((c) => {
-              const message = template ? buildFollowUpMessage(template, c, settings) : ''
+              const message = previewFor(c)
               return (
                 <div key={c.id} className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-3">
                   <input
@@ -362,12 +419,12 @@ function DueTab({ dueClients }) {
                     <button onClick={() => sendOne(c)} disabled={sendingId === c.id} className="btn-brass text-xs py-1.5">
                       {sendingId === c.id ? (
                         <Loader2 size={13} className="animate-spin" />
-                      ) : isAutoMode ? (
+                      ) : isApiMode ? (
                         <Zap size={13} />
                       ) : (
                         <Send size={13} />
                       )}
-                      {isAutoMode ? 'Send' : 'WhatsApp'}
+                      {isApiMode ? 'Send' : 'WhatsApp'}
                     </button>
                   </div>
                 </div>
@@ -377,16 +434,18 @@ function DueTab({ dueClients }) {
         </div>
       )}
 
-      <SendQueueModal
-        open={queueOpen}
-        onClose={() => setQueueOpen(false)}
-        clients={filtered.filter((c) => selected.has(c.id))}
-        template={template}
-        onDone={() => {
-          setSelected(new Set())
-          setQueueOpen(false)
-        }}
-      />
+      {!isApiMode && (
+        <SendQueueModal
+          open={queueOpen}
+          onClose={() => setQueueOpen(false)}
+          clients={filtered.filter((c) => selected.has(c.id))}
+          template={selectedManualTemplate}
+          onDone={() => {
+            setSelected(new Set())
+            setQueueOpen(false)
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -461,6 +520,8 @@ function TemplatesTab() {
   const [form, setForm] = useState(emptyTemplateForm)
   const [confirmDelete, setConfirmDelete] = useState(null)
 
+  const syncedTemplates = settings.followUpSyncedTemplates || []
+
   function openAdd() {
     setForm(emptyTemplateForm)
     setEditingId(null)
@@ -492,8 +553,45 @@ function TemplatesTab() {
 
   return (
     <div>
+      {settings.followUpSendMode === 'api' && (
+        <div className="card p-4 mb-6 flex items-start gap-3 bg-brass/10 border-brass/20">
+          <Zap size={16} className="text-brass-dark mt-0.5 shrink-0" />
+          <p className="text-xs text-ink">
+            Automatic sending is on, so Follow-ups uses <span className="font-medium">synced WhatsApp CRM templates</span> (below),
+            not the custom templates on this tab. Custom wording only applies in Manual mode. Manage which synced template is
+            default and its variable mapping in <span className="font-medium">Settings → Follow-up reminders</span>.
+          </p>
+        </div>
+      )}
+
+      {syncedTemplates.length > 0 && (
+        <div className="mb-8">
+          <p className="text-sm font-semibold text-ink mb-1">Synced WhatsApp CRM templates</p>
+          <p className="text-xs text-muted mb-3">
+            Read-only — these are approved Meta templates pulled from your WhatsApp CRM. Edit wording there, then re-sync in
+            Settings.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {syncedTemplates.map((t) => (
+              <div key={t.id} className="card p-5 flex flex-col">
+                <div className="flex items-start justify-between mb-2">
+                  <p className="font-semibold text-ink flex items-center gap-1.5">
+                    {t.name}
+                    {settings.followUpApiTemplateId === t.id && <Star size={13} className="text-brass fill-brass" />}
+                  </p>
+                  <Badge tone="muted">{t.language}</Badge>
+                </div>
+                <p className="text-sm text-muted whitespace-pre-wrap flex-1 font-mono text-xs bg-sand/50 rounded-lg p-2">
+                  {t.body_text}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-4">
-        <p className="text-sm text-muted">Templates support tokens that auto-fill per client when a message is sent.</p>
+        <p className="text-sm text-muted">Your own templates support tokens that auto-fill per client - used in Manual sending mode.</p>
         <button className="btn-primary shrink-0" onClick={openAdd}>
           <Plus size={16} /> Add Template
         </button>

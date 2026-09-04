@@ -451,17 +451,25 @@ export const defaultSettings = {
   followUpEnabled: true,
   followUpDays: 25,
   followUpDefaultTemplateId: 'tpl_1',
-  followUpAutoEnabled: false,
-  followUpApiProvider: '',
-  followUpApiKey: '',
-  followUpSenderNumber: '',
+  // 'manual' - your own custom templates below, sent via a wa.me link
+  // you tap to send yourself. 'api' - a template synced from the
+  // connected WhatsApp CRM, sent automatically with no manual step
+  // (see followUpSyncedTemplates / followUpSyncedTemplateMappings).
+  followUpSendMode: 'manual',
+  followUpSyncedTemplates: [],
+  followUpSyncedTemplateMappings: {},
+  followUpApiTemplateId: '',
+  // WhatsApp CRM connection - shared by Invoice WhatsApp sending and
+  // Follow-ups automatic sending (see src/utils/whatsappCloudApi.js).
+  // One API key with the `messages:send` and `templates:read` scopes
+  // covers both.
+  whatsappCrmBaseUrl: '',
+  whatsappCrmApiKey: '',
   // Invoice WhatsApp sending — off (manual wa.me) by default. When
   // enabled, invoices are sent through the approved WhatsApp template
-  // via the connected WhatsApp Cloud API backend (see
-  // src/utils/whatsappCloudApi.js) instead of opening a wa.me link.
+  // via the connected WhatsApp CRM (see src/utils/whatsappCloudApi.js)
+  // instead of opening a wa.me link.
   invoiceApiEnabled: false,
-  invoiceApiBaseUrl: '',
-  invoiceApiKey: '',
   invoiceTemplateName: 'invoice_created',
   invoiceTemplateLanguage: 'en',
 }

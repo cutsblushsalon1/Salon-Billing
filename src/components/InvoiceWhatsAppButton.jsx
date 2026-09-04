@@ -3,6 +3,18 @@ import { Share2, Loader2, CircleCheck, CircleX } from 'lucide-react'
 import { whatsappInvoiceMessage, whatsappLink } from '../utils/helpers.js'
 import { isInvoiceApiConfigured, sendInvoiceViaCloudApi } from '../utils/whatsappCloudApi.js'
 
+// Drop-in replacement for the old static "Share on WhatsApp" wa.me
+// anchor used in NewBill and BillingHistory. Behaviour depends on
+// Settings > Invoice WhatsApp sending:
+//   - Not enabled/configured (default): unchanged manual behaviour -
+//     an <a href="wa.me/...">  link that opens a pre-filled chat.
+//   - Enabled & configured: a real <button> that sends the approved
+//     invoice template straight through the connected WhatsApp Cloud
+//     API backend, with inline sending/sent/error feedback.
+//
+// variant="icon" renders the small icon-only control used in the
+// BillingHistory table row; variant="button" (default) renders the
+// full labelled button used in the success/view modals.
 export default function InvoiceWhatsAppButton({ bill, settings, variant = 'button', className = '' }) {
   const [status, setStatus] = useState('idle') // idle | sending | sent | error
   const [error, setError] = useState('')

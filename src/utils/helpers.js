@@ -156,15 +156,51 @@ export function getClientLastService(client) {
   return (last.items && last.items[0]) || ''
 }
 
-export function buildFollowUpMessage(template, client, settings) {
-  const tokens = {
+// The fixed set of client-context values available to plug into a
+// follow-up message - used both by custom {token} templates
+// (renderTemplate, below) and, for automatic sending, as the pool of
+// values an admin can map onto a synced WhatsApp template's {{n}}
+// variables in Settings (see buildFollowUpSyncedTemplateParams).
+export const FOLLOWUP_TOKENS = [
+  { key: 'clientName', label: "Client's name" },
+  { key: 'salonName', label: 'Your salon name' },
+  { key: 'lastVisitDate', label: 'Date of their last visit' },
+  { key: 'daysSinceVisit', label: 'Days since their last visit' },
+  { key: 'lastService', label: 'The last service they had' },
+]
+
+export function buildFollowUpTokenValues(client, settings) {
+  return {
     clientName: client.name,
     salonName: settings.salonName,
     lastVisitDate: client.lastVisit ? formatDate(client.lastVisit) : '',
     daysSinceVisit: client.lastVisit ? String(daysSince(client.lastVisit)) : '',
     lastService: getClientLastService(client) || 'next service',
   }
+}
+
+export function buildFollowUpMessage(template, client, settings) {
+  const tokens = buildFollowUpTokenValues(client, settings)
   return renderTemplate(template.body, tokens)
+}
+
+// Builds body/button params for a *synced* WhatsApp CRM template (see
+// FollowUps automatic sending) using the variable-to-token mapping an
+// admin configured for it in Settings. `mapping` is
+// `settings.followUpSyncedTemplateMappings[template.id]`, shaped
+// `{ body: [tokenKey, ...], buttonParams: { [buttonIndex]: tokenKey } }`.
+// A variable with no mapping configured yet resolves to an empty
+// string rather than throwing, so an incomplete setup fails loudly on
+// WhatsApp's side (an obviously-blank field) instead of crashing here.
+export function buildFollowUpSyncedTemplateParams(client, settings, mapping) {
+  const tokenValues = buildFollowUpTokenValues(client, settings)
+  const resolve = (tokenKey) => (tokenKey ? tokenValues[tokenKey] ?? '' : '')
+  const body = (mapping?.body || []).map(resolve)
+  const buttonParams = {}
+  Object.entries(mapping?.buttonParams || {}).forEach(([index, tokenKey]) => {
+    buttonParams[index] = resolve(tokenKey)
+  })
+  return { body, buttonParams }
 }
 
 export function getBillStaffNames(bill) {

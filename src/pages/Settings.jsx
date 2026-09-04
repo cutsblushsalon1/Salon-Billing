@@ -21,7 +21,8 @@ import {
 } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, Modal } from '../components/ui.jsx'
-import { sendInvoiceViaCloudApi } from '../utils/whatsappCloudApi.js'
+import { sendInvoiceViaCloudApi, fetchSyncedTemplates, isCrmConnectionConfigured } from '../utils/whatsappCloudApi.js'
+import { FOLLOWUP_TOKENS } from '../utils/helpers.js'
 
 export default function Settings() {
   const {
@@ -56,8 +57,24 @@ export default function Settings() {
   const [testPhone, setTestPhone] = useState('')
   const [testStatus, setTestStatus] = useState('idle') // idle | sending | sent | error
   const [testError, setTestError] = useState('')
+  const [syncStatus, setSyncStatus] = useState('idle') // idle | syncing | synced | error
+  const [syncError, setSyncError] = useState('')
 
   const NTFY_TOPIC = 'CutsBlushSalonAppointmentsNotification'
+
+  async function handleSyncFollowUpTemplates() {
+    setSyncStatus('syncing')
+    setSyncError('')
+    const result = await fetchSyncedTemplates(form)
+    if (result.ok) {
+      setForm((s) => ({ ...s, followUpSyncedTemplates: result.templates }))
+      setSyncStatus('synced')
+      setTimeout(() => setSyncStatus('idle'), 3000)
+    } else {
+      setSyncStatus('error')
+      setSyncError(result.error)
+    }
+  }
 
   async function handleSendTestInvoice() {
     setTestStatus('sending')
@@ -308,78 +325,141 @@ export default function Settings() {
           <span className="font-medium text-ink">Follow-ups</span> page in the sidebar.
         </p>
 
-        {/* Automatic sending */}
+        {/* Sending mode */}
         <div className="border-t border-black/5 pt-5">
-          <div className="flex items-center justify-between mb-3">
-            <label className="flex items-center gap-2.5 text-sm font-medium text-ink">
+          <p className="label mb-2">Sending mode</p>
+          <div className="space-y-2.5 mb-4">
+            <label className="flex items-start gap-2.5 text-sm text-ink">
               <input
-                type="checkbox"
-                checked={form.followUpAutoEnabled}
-                onChange={(e) => setForm((s) => ({ ...s, followUpAutoEnabled: e.target.checked }))}
-                className="w-4 h-4 accent-plum"
+                type="radio"
+                name="followUpSendMode"
+                checked={form.followUpSendMode !== 'api'}
+                onChange={() => setForm((s) => ({ ...s, followUpSendMode: 'manual' }))}
+                className="w-4 h-4 accent-plum mt-0.5"
               />
-              <Zap size={15} className="text-brass-dark" /> Automatic sending via API
+              <span>
+                <span className="font-medium">Manual</span> — your own custom templates (manage wording on the{' '}
+                <span className="font-medium">Follow-ups → Templates</span> tab). Tapping "Send" opens a pre-filled
+                WhatsApp chat for you to send yourself.
+              </span>
+            </label>
+            <label className="flex items-start gap-2.5 text-sm text-ink">
+              <input
+                type="radio"
+                name="followUpSendMode"
+                checked={form.followUpSendMode === 'api'}
+                onChange={() => setForm((s) => ({ ...s, followUpSendMode: 'api' }))}
+                className="w-4 h-4 accent-plum mt-0.5"
+              />
+              <span className="flex items-center gap-1.5">
+                <Zap size={14} className="text-brass-dark shrink-0" />
+                <span>
+                  <span className="font-medium">Automatic via WhatsApp CRM</span> — sends a template synced from your
+                  WhatsApp CRM with no manual step, including a genuine one-click "send to all due" button. Only
+                  approved templates synced below can be used — no custom wording in this mode.
+                </span>
+              </span>
             </label>
           </div>
 
-          <div className="flex items-start gap-2.5 p-3 rounded-lg bg-plum/5 text-xs text-ink mb-4">
-            <TriangleAlert size={15} className="text-plum mt-0.5 shrink-0" />
-            <p>
-              This app runs in your browser, so it can't hold API credentials securely or run on its own schedule — that part needs a
-              small backend you control. Once you have one (see the guide on the Follow-ups page), point{' '}
-              <span className="font-medium">Webhook URL</span> at it below and turn this on. From then on, Follow-ups sends messages
-              by calling that URL instead of opening WhatsApp manually — including a genuine one-click "send to all due" button.
-              Leave this off (default) to keep using the manual WhatsApp send queue.
-            </p>
-          </div>
+          {form.followUpSendMode === 'api' && (
+            <div className="rounded-lg bg-plum/5 p-3 space-y-3">
+              {!isCrmConnectionConfigured(form) && (
+                <p className="flex items-start gap-2 text-xs text-ink">
+                  <TriangleAlert size={14} className="text-plum mt-0.5 shrink-0" />
+                  Set the <span className="font-medium mx-1">WhatsApp CRM connection</span> below first, then come
+                  back here to sync templates.
+                </p>
+              )}
 
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={handleSyncFollowUpTemplates}
+                  className="btn-ghost"
+                  disabled={syncStatus === 'syncing' || !isCrmConnectionConfigured(form)}
+                >
+                  {syncStatus === 'syncing' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
+                  {syncStatus === 'syncing' ? 'Syncing…' : 'Sync templates'}
+                </button>
+                <span className="text-xs text-muted">{(form.followUpSyncedTemplates || []).length} template(s) synced</span>
+                {syncStatus === 'synced' && (
+                  <span className="text-success text-xs font-medium flex items-center gap-1">
+                    <CircleCheck size={13} /> Synced
+                  </span>
+                )}
+              </div>
+              {syncStatus === 'error' && (
+                <p className="text-xs text-danger flex items-center gap-1">
+                  <CircleX size={13} /> {syncError}
+                </p>
+              )}
+
+              {(form.followUpSyncedTemplates || []).length === 0 ? (
+                <p className="text-xs text-muted">
+                  No templates synced yet. Approve a template in Meta, sync it into your WhatsApp CRM's dashboard,
+                  then click "Sync templates" above to pull it in here.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {form.followUpSyncedTemplates.map((t) => (
+                    <SyncedTemplateCard
+                      key={t.id}
+                      template={t}
+                      isDefault={form.followUpApiTemplateId === t.id}
+                      mapping={form.followUpSyncedTemplateMappings?.[t.id]}
+                      onSetDefault={() => setForm((s) => ({ ...s, followUpApiTemplateId: t.id }))}
+                      onMappingChange={(mapping) =>
+                        setForm((s) => ({
+                          ...s,
+                          followUpSyncedTemplateMappings: { ...s.followUpSyncedTemplateMappings, [t.id]: mapping },
+                        }))
+                      }
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* WhatsApp CRM connection */}
+      <section className="card p-5 sm:p-6 mt-6">
+        <div className="flex items-center gap-2 mb-4">
+          <MessageCircle size={17} className="text-plum" />
+          <p className="font-display text-lg text-ink">WhatsApp CRM connection</p>
+        </div>
+        <p className="text-sm text-muted mb-4">
+          Shared by <span className="font-medium text-ink">Follow-ups automatic sending</span> above and{' '}
+          <span className="font-medium text-ink">Invoice WhatsApp sending</span> below. This app runs in your
+          browser, so it can't hold a Meta access token securely — it points at your WhatsApp CRM deployment
+          instead, which already speaks the WhatsApp Cloud API on your behalf.
+        </p>
+        <div className="space-y-3">
           <div>
-            <label className="label">Webhook / API endpoint URL</label>
+            <label className="label">Base URL</label>
             <input
               className="input"
-              placeholder="https://api-backend.example.com/api/send-followup"
-              value={form.followUpWebhookUrl}
-              onChange={(e) => setForm((s) => ({ ...s, followUpWebhookUrl: e.target.value }))}
-              disabled={!form.followUpAutoEnabled}
+              placeholder="https://your-whatsapp-crm.vercel.app"
+              value={form.whatsappCrmBaseUrl}
+              onChange={(e) => setForm((s) => ({ ...s, whatsappCrmBaseUrl: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="label">API key</label>
+            <input
+              className="input"
+              type="password"
+              placeholder="wacrm_live_..."
+              value={form.whatsappCrmApiKey}
+              onChange={(e) => setForm((s) => ({ ...s, whatsappCrmApiKey: e.target.value }))}
             />
             <p className="text-xs text-muted mt-1.5">
-              For each message, this app sends a POST request here with <span className="font-mono">{'{ phone, name, message }'}</span>{' '}
-              as JSON. Your backend receives it and calls the WhatsApp API. It must accept cross-origin requests from this site.
+              Created under Account → API keys in your WhatsApp CRM. Grant{' '}
+              <span className="font-mono">messages:send</span> (both features) and{' '}
+              <span className="font-mono">templates:read</span> (needed for Follow-ups' "Sync templates").
             </p>
           </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
-            <div>
-              <label className="label">API provider (reference only)</label>
-              <select
-                className="input"
-                value={form.followUpApiProvider}
-                onChange={(e) => setForm((s) => ({ ...s, followUpApiProvider: e.target.value }))}
-                disabled={!form.followUpAutoEnabled}
-              >
-                <option value="">Not set</option>
-                <option value="whatsapp_cloud">WhatsApp Cloud API (Meta)</option>
-                <option value="twilio">Twilio</option>
-                <option value="aisensy">AiSensy</option>
-                <option value="gupshup">Gupshup</option>
-                <option value="other">Other / custom</option>
-              </select>
-            </div>
-            <div>
-              <label className="label">Sender number</label>
-              <input
-                className="input"
-                placeholder="+91 98765 43210"
-                value={form.followUpSenderNumber}
-                onChange={(e) => setForm((s) => ({ ...s, followUpSenderNumber: e.target.value }))}
-                disabled={!form.followUpAutoEnabled}
-              />
-            </div>
-          </div>
-          <p className="text-xs text-muted mt-2">
-            Provider and sender number are just labels for your own reference — the actual API key lives on your backend, never in
-            this browser.
-          </p>
         </div>
       </section>
 
@@ -404,38 +484,13 @@ export default function Settings() {
           <TriangleAlert size={15} className="text-plum mt-0.5 shrink-0" />
           <p>
             Leave this off (default) and "Share on WhatsApp" keeps working the manual way — it opens a pre-filled
-            WhatsApp chat for you to send yourself. Turn it on once you have a WhatsApp Cloud API connection, and the
-            same button instead sends the approved invoice template straight away, with no chat window and no manual
-            step. This app is a browser-only frontend, so the actual Meta connection needs to live on a backend you
-            control — point <span className="font-medium">Base URL</span> below at your WhatsApp CRM deployment
-            (its <span className="font-mono">/api/v1/messages</span> endpoint) and paste an API key created there
-            with the <span className="font-mono">messages:send</span> scope.
+            WhatsApp chat for you to send yourself. Turn it on once the <span className="font-medium">WhatsApp CRM
+            connection</span> above is set up, and the same button instead sends the approved invoice template
+            straight away, with no chat window and no manual step.
           </p>
         </div>
 
         <div className="space-y-3">
-          <div>
-            <label className="label">Base URL</label>
-            <input
-              className="input"
-              placeholder="https://your-whatsapp-crm.vercel.app"
-              value={form.invoiceApiBaseUrl}
-              onChange={(e) => setForm((s) => ({ ...s, invoiceApiBaseUrl: e.target.value }))}
-              disabled={!form.invoiceApiEnabled}
-            />
-          </div>
-          <div>
-            <label className="label">API key</label>
-            <input
-              className="input"
-              type="password"
-              placeholder="wacrm_live_..."
-              value={form.invoiceApiKey}
-              onChange={(e) => setForm((s) => ({ ...s, invoiceApiKey: e.target.value }))}
-              disabled={!form.invoiceApiEnabled}
-            />
-            <p className="text-xs text-muted mt-1.5">Created under Account → API keys in your WhatsApp CRM. Needs the "messages:send" scope.</p>
-          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="label">Template name</label>
@@ -494,7 +549,7 @@ Button — View Invoice → https://cutsblushsalon.vercel.app/invoice/{{1}}`}
             <button
               onClick={handleSendTestInvoice}
               className="btn-ghost"
-              disabled={testStatus === 'sending' || !testPhone.trim() || !form.invoiceApiBaseUrl || !form.invoiceApiKey || !form.invoiceTemplateName}
+              disabled={testStatus === 'sending' || !testPhone.trim() || !form.whatsappCrmBaseUrl || !form.whatsappCrmApiKey || !form.invoiceTemplateName}
             >
               {testStatus === 'sending' ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
               {testStatus === 'sending' ? 'Sending…' : 'Send test invoice'}
@@ -700,6 +755,92 @@ Button — View Invoice → https://cutsblushsalon.vercel.app/invoice/{{1}}`}
           </div>
         </div>
       </Modal>
+    </div>
+  )
+}
+
+// One synced WhatsApp CRM template's card: shows its (read-only,
+// Meta-approved) body text, lets the admin map each {{n}} body
+// variable and any URL button variable onto one of FOLLOWUP_TOKENS,
+// and mark it the default template for automatic follow-up sending.
+// Local to Settings.jsx - only used here.
+function SyncedTemplateCard({ template, isDefault, mapping, onSetDefault, onMappingChange }) {
+  const bodyMapping = mapping?.body || Array(template.body_variable_count).fill('')
+  const buttonParamsMapping = mapping?.buttonParams || {}
+
+  function updateBodyVar(index, value) {
+    const next = [...bodyMapping]
+    next[index] = value
+    onMappingChange({ body: next, buttonParams: buttonParamsMapping })
+  }
+
+  function updateButtonVar(buttonIndex, value) {
+    onMappingChange({ body: bodyMapping, buttonParams: { ...buttonParamsMapping, [buttonIndex]: value } })
+  }
+
+  const urlButtonsWithVars = (template.buttons || [])
+    .map((b, i) => ({ ...b, index: i }))
+    .filter((b) => b.type === 'URL' && b.variable_count > 0)
+
+  return (
+    <div className="rounded-lg border border-black/10 p-3 bg-paper">
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <div>
+          <p className="text-sm font-medium text-ink">{template.name}</p>
+          <p className="text-xs text-muted">
+            {template.language} · {template.category}
+          </p>
+        </div>
+        <button
+          onClick={onSetDefault}
+          className={`text-xs px-2.5 py-1 rounded-full border shrink-0 ${
+            isDefault ? 'bg-plum text-cream border-plum' : 'border-black/10 text-muted hover:bg-black/5'
+          }`}
+        >
+          {isDefault ? 'Default' : 'Set default'}
+        </button>
+      </div>
+
+      <p className="text-xs font-mono text-ink bg-sand/50 rounded-lg p-2 whitespace-pre-wrap mb-2.5 leading-relaxed">
+        {template.body_text}
+      </p>
+
+      {(template.body_variable_count > 0 || urlButtonsWithVars.length > 0) && (
+        <div className="space-y-1.5">
+          {Array.from({ length: template.body_variable_count }).map((_, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <span className="text-xs text-muted w-12 shrink-0 font-mono">{`{{${i + 1}}}`}</span>
+              <select className="input text-xs py-1.5" value={bodyMapping[i] || ''} onChange={(e) => updateBodyVar(i, e.target.value)}>
+                <option value="">Choose a value…</option>
+                {FOLLOWUP_TOKENS.map((tk) => (
+                  <option key={tk.key} value={tk.key}>
+                    {tk.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ))}
+          {urlButtonsWithVars.map((b) => (
+            <div key={b.index} className="flex items-center gap-2">
+              <span className="text-xs text-muted w-12 shrink-0" title={`Button: ${b.text}`}>
+                Button
+              </span>
+              <select
+                className="input text-xs py-1.5"
+                value={buttonParamsMapping[b.index] || ''}
+                onChange={(e) => updateButtonVar(b.index, e.target.value)}
+              >
+                <option value="">Choose a value…</option>
+                {FOLLOWUP_TOKENS.map((tk) => (
+                  <option key={tk.key} value={tk.key}>
+                    {tk.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
