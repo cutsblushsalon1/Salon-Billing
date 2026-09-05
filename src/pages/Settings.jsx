@@ -21,7 +21,7 @@ import {
 } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, Modal } from '../components/ui.jsx'
-import { sendInvoiceViaCloudApi, sendMembershipViaCloudApi, sendFollowUpViaCloudApi, isCrmConnectionConfigured } from '../utils/whatsappCloudApi.js'
+import { sendInvoiceViaCloudApi, sendMembershipViaCloudApi, sendFollowUpViaCloudApi, fetchTemplateByName, isCrmConnectionConfigured } from '../utils/whatsappCloudApi.js'
 
 export default function Settings() {
   const {
@@ -62,8 +62,37 @@ export default function Settings() {
   const [testFollowUpPhone, setTestFollowUpPhone] = useState('')
   const [testFollowUpStatus, setTestFollowUpStatus] = useState('idle') // idle | sending | sent | error
   const [testFollowUpError, setTestFollowUpError] = useState('')
+  const [followUpSyncStatus, setFollowUpSyncStatus] = useState('idle') // idle | syncing | synced | error
+  const [followUpSyncError, setFollowUpSyncError] = useState('')
+
+  // True only while the currently-synced template's name still matches
+  // what's typed in the Template name field - if the admin edits the
+  // name afterwards, the stale synced copy stops being shown as "the"
+  // approved copy (falls back to the generic reference text) until
+  // they sync again.
+  const followUpSyncedMatches =
+    !!form.followUpSyncedTemplate &&
+    (form.followUpSyncedTemplate.name || '').trim().toLowerCase() === (form.followUpTemplateName || '').trim().toLowerCase()
 
   const NTFY_TOPIC = 'CutsBlushSalonAppointmentsNotification'
+
+  async function handleSyncFollowUpTemplate() {
+    setFollowUpSyncStatus('syncing')
+    setFollowUpSyncError('')
+    const result = await fetchTemplateByName(form, form.followUpTemplateName)
+    if (result.ok) {
+      setForm((s) => ({
+        ...s,
+        followUpTemplateLanguage: result.template.language || s.followUpTemplateLanguage,
+        followUpSyncedTemplate: result.template,
+      }))
+      setFollowUpSyncStatus('synced')
+      setTimeout(() => setFollowUpSyncStatus('idle'), 3000)
+    } else {
+      setFollowUpSyncStatus('error')
+      setFollowUpSyncError(result.error)
+    }
+  }
 
   async function handleSendTestInvoice() {
     setTestStatus('sending')
@@ -406,12 +435,36 @@ export default function Settings() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="label text-[11px]">Template name</label>
-                  <input
-                    className="input"
-                    value={form.followUpTemplateName}
-                    onChange={(e) => setForm((s) => ({ ...s, followUpTemplateName: e.target.value }))}
-                  />
-                  <p className="text-[11px] text-muted mt-1.5">Must match the approved template's name exactly (case-sensitive).</p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      className="input"
+                      value={form.followUpTemplateName}
+                      onChange={(e) => setForm((s) => ({ ...s, followUpTemplateName: e.target.value }))}
+                    />
+                    <button
+                      onClick={handleSyncFollowUpTemplate}
+                      className="btn-ghost shrink-0 px-3"
+                      disabled={followUpSyncStatus === 'syncing' || !isCrmConnectionConfigured(form) || !form.followUpTemplateName.trim()}
+                      title="Fetch this exact template name from your WhatsApp CRM to confirm it's approved and preview its real copy"
+                    >
+                      {followUpSyncStatus === 'syncing' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
+                      {followUpSyncStatus === 'syncing' ? 'Syncing…' : 'Sync'}
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-muted mt-1.5">
+                    Must match the approved template's name exactly (case-sensitive). Click "Sync" to pull it in and
+                    confirm it's approved.
+                  </p>
+                  {followUpSyncStatus === 'synced' && (
+                    <p className="text-[11px] text-success font-medium flex items-center gap-1 mt-1.5">
+                      <CircleCheck size={12} /> Synced — showing the real approved copy below.
+                    </p>
+                  )}
+                  {followUpSyncStatus === 'error' && (
+                    <p className="text-[11px] text-danger flex items-center gap-1 mt-1.5">
+                      <CircleX size={12} /> {followUpSyncError}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="label text-[11px]">Template language code</label>
@@ -421,18 +474,42 @@ export default function Settings() {
                     value={form.followUpTemplateLanguage}
                     onChange={(e) => setForm((s) => ({ ...s, followUpTemplateLanguage: e.target.value }))}
                   />
+                  <p className="text-[11px] text-muted mt-1.5">Auto-filled from the synced template, or set it yourself.</p>
                 </div>
               </div>
 
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted mb-2">Approved template reference</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted mb-2">
+                  {followUpSyncedMatches ? (
+                    <span className="flex items-center gap-1.5 text-ink normal-case font-medium">
+                      <CircleCheck size={13} className="text-success" /> {form.followUpSyncedTemplate.name}
+                      <span className="text-muted font-normal">
+                        · {form.followUpSyncedTemplate.language} · {form.followUpSyncedTemplate.category}
+                      </span>
+                    </span>
+                  ) : (
+                    'Reference copy (not yet synced)'
+                  )}
+                </p>
                 <div className="rounded-lg bg-sand/50 px-3 py-3 text-xs text-ink font-mono whitespace-pre-wrap leading-relaxed">
-{`Hi {{1}}, it's been {{2}} days since your last visit to *${form.salonName || 'Cuts & Blush Unisex Salon'}*! We'd love to see you again soon for {{3}}. Book your next appointment today!`}
+                  {followUpSyncedMatches
+                    ? form.followUpSyncedTemplate.body_text
+                    : `Hi {{1}}, we miss you at *${form.salonName || 'Cuts & Blush Unisex Salon'}*! It's been {{3}} days since your last visit — enjoy a special *25% OFF* on your next service, just for you. Book your appointment today and treat yourself!`}
                 </div>
                 <p className="text-[11px] text-muted mt-2">
-                  {'{{1}}'} client's name, {'{{2}}'} days since last visit, {'{{3}}'} their last service — all generated
-                  automatically per client, never typed in.
+                  {'{{1}}'} client's name, {'{{2}}'} salon name, {'{{3}}'} days since last visit — all generated
+                  automatically per client, never typed in. The 25% offer is fixed copy in the approved template
+                  itself, not a variable.
                 </p>
+                {followUpSyncedMatches && form.followUpSyncedTemplate.body_variable_count !== 3 && (
+                  <p className="text-[11px] text-danger flex items-start gap-1 mt-2">
+                    <TriangleAlert size={12} className="mt-0.5 shrink-0" />
+                    This template expects {form.followUpSyncedTemplate.body_variable_count} variable
+                    {form.followUpSyncedTemplate.body_variable_count === 1 ? '' : 's'}, but Follow-ups always sends 3
+                    ({'{{1}}'} name, {'{{2}}'} salon, {'{{3}}'} days since visit). Re-approve the template to match
+                    that shape, or it may be rejected by WhatsApp when sent.
+                  </p>
+                )}
               </div>
 
               <div className="border-t border-black/5 pt-3">
@@ -509,8 +586,9 @@ export default function Settings() {
             />
             <p className="text-xs text-muted mt-1.5">
               Created under Account → API keys in your WhatsApp CRM. Grant{' '}
-              <span className="font-mono">messages:send</span> — used by Invoice, Membership, and Follow-up automatic
-              sending.
+              <span className="font-mono">messages:send</span> — used by Invoice, Membership, and Follow-up
+              automatic sending. Add <span className="font-mono">templates:read</span> too if you want to use
+              Follow-ups' "Sync" button to confirm a template name and preview its real copy.
             </p>
           </div>
         </div>

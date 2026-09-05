@@ -11,11 +11,16 @@
 // Graph API doesn't send CORS headers for browser callers). Instead it
 // points at a small backend that already speaks the WhatsApp Cloud API
 // on your behalf - the paired "WhatsApp CRM" project is built for
-// exactly this, exposing a public endpoint (under src/app/api/v1/ in
-// that project):
-//   - POST /api/v1/messages (scope: messages:send) - send a template
-//     message.
-// An API key with the `messages:send` scope covers all three features.
+// exactly this, exposing two public endpoints (both under
+// src/app/api/v1/ in that project):
+//   - POST /api/v1/messages  (scope: messages:send)   - send a template
+//     message. Required for all three features.
+//   - GET  /api/v1/templates (scope: templates:read)  - look up a single
+//     approved template by name. Only used by Follow-ups' "Sync
+//     template" button (Settings > Follow-up reminders), to confirm the
+//     name you typed is real and pull in its actual approved copy for
+//     an accurate on-screen preview - optional, sending still works
+//     with just the template name typed in by hand.
 
 import { formatPhoneE164, buildInvoiceTemplateParams, buildMembershipTemplateParams, buildFollowUpApiTemplateParams } from './helpers.js'
 
@@ -151,4 +156,58 @@ export async function sendFollowUpViaCloudApi(settings, client) {
     body,
     buttonParams: {},
   })
+}
+
+// Looks up one approved WhatsApp template by its exact name from the
+// connected CRM, for Follow-ups' "Sync template" action (Settings >
+// Follow-up reminders). Unlike the old "browse and pick from every
+// synced template" flow, you type the exact name of the template you
+// already got approved in Meta and this just confirms it exists and
+// pulls in its real body copy + variable count, so Settings can show an
+// accurate preview instead of assuming the shape. Sending itself doesn't
+// require this - it's a validation/preview convenience.
+// Returns { ok: true, template } or { ok: false, error }. Never throws.
+export async function fetchTemplateByName(settings, name) {
+  if (!isCrmConnectionConfigured(settings)) {
+    return { ok: false, error: 'Set the WhatsApp CRM Base URL and API key first.' }
+  }
+  const target = (name || '').trim()
+  if (!target) {
+    return { ok: false, error: 'Enter the exact template name first.' }
+  }
+
+  let response
+  try {
+    response = await fetch(`${baseUrlOf(settings)}/api/v1/templates?status=approved`, {
+      method: 'GET',
+      headers: authHeaders(settings),
+    })
+  } catch {
+    return { ok: false, error: "Couldn't reach the WhatsApp CRM. Check the Base URL and your connection." }
+  }
+
+  if (!response.ok) {
+    let message = `Sync failed (HTTP ${response.status}).`
+    try {
+      const data = await response.json()
+      if (data?.error?.message) message = data.error.message
+    } catch {
+      // Non-JSON error body - keep the generic message above.
+    }
+    return { ok: false, error: message }
+  }
+
+  let data
+  try {
+    data = await response.json()
+  } catch {
+    return { ok: false, error: 'Unexpected response from the WhatsApp CRM.' }
+  }
+
+  const list = Array.isArray(data?.data) ? data.data : []
+  const match = list.find((t) => (t.name || '').trim().toLowerCase() === target.toLowerCase())
+  if (!match) {
+    return { ok: false, error: `No approved template named "${target}" was found in your WhatsApp CRM. Check the spelling and that it's approved in Meta.` }
+  }
+  return { ok: true, template: match }
 }

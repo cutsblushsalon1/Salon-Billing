@@ -200,33 +200,44 @@ export function buildFollowUpMessage(template, client, settings) {
 }
 
 // The approved "follow-up" WhatsApp template's copy (see Settings >
-// Follow-up reminders > Automatic sending), shown as a read-only
+// Follow-up reminders > Automatic sending), shown as a fallback
 // reference in Settings and used to render an on-screen preview in
-// Follow-ups. What actually gets sent is the structured template name +
-// body params (buildFollowUpApiTemplateParams below), not this string.
+// Follow-ups whenever no synced template is available. What actually
+// gets sent is the structured template name + body params
+// (buildFollowUpApiTemplateParams below), not this string.
 export const FOLLOWUP_API_TEMPLATE_TEXT =
-  "Hi {{1}}, it's been {{2}} days since your last visit to *{{3}}*! We'd love to see you again soon for {{4}}. Book your next appointment today!"
+  "Hi {{1}}, we miss you at *{{2}}*! It's been {{3}} days since your last visit — enjoy a special *25% OFF* on your next service, just for you. Book your appointment today and treat yourself!"
 
 // Builds the dynamic values for the approved follow-up WhatsApp template
 // directly from the client, the same way buildInvoiceTemplateParams does
 // for invoices — one fixed, Meta-approved template for every automatic
 // follow-up, no per-template variable mapping needed:
-//   {{1}} client's name, {{2}} days since last visit, {{3}} salon name,
-//   {{4}} the last service they had (or "next service" if unknown)
+//   {{1}} client's name, {{2}} salon name, {{3}} days since last visit
+// The 25% offer itself is fixed copy in the approved template, not a
+// variable — Meta template variables are for personalisation, not for
+// changing the deal being offered.
 export function buildFollowUpApiTemplateParams(client, settings) {
   const tokens = buildFollowUpTokenValues(client, settings)
   return {
-    body: [tokens.clientName, tokens.daysSinceVisit, tokens.salonName, tokens.lastService],
+    body: [tokens.clientName, tokens.salonName, tokens.daysSinceVisit],
   }
 }
 
-// Renders the approved follow-up template's copy with a given client's
-// values filled in, for on-screen preview only (what actually gets sent
-// is the structured template + params, not this string).
+// Renders the follow-up template's copy with a given client's values
+// filled in, for on-screen preview only (what actually gets sent is the
+// structured template + params, not this string). Prefers the real
+// approved body text pulled in via Settings > "Sync template" (so the
+// preview matches Meta's actual wording) when it's been synced and still
+// matches the configured template name; falls back to the generic
+// reference copy above otherwise.
 export function previewFollowUpApiTemplate(client, settings) {
   const { body } = buildFollowUpApiTemplateParams(client, settings)
+  const synced = settings.followUpSyncedTemplate
+  const nameMatches =
+    synced && (synced.name || '').trim().toLowerCase() === (settings.followUpTemplateName || '').trim().toLowerCase()
+  const text = nameMatches && synced.body_text ? synced.body_text : FOLLOWUP_API_TEMPLATE_TEXT
   let i = 0
-  return FOLLOWUP_API_TEMPLATE_TEXT.replace(/\{\{\d+\}\}/g, () => body[i++] ?? '')
+  return text.replace(/\{\{\d+\}\}/g, () => body[i++] ?? '')
 }
 
 export function getBillStaffNames(bill) {

@@ -459,9 +459,17 @@ export const defaultSettings = {
   followUpSendMode: 'manual',
   followUpTemplateName: 'followup_reminder',
   followUpTemplateLanguage: 'en',
+  // Populated by Follow-ups' "Sync template" action in Settings (see
+  // fetchTemplateByName in src/utils/whatsappCloudApi.js) — the real
+  // approved template pulled in by exact name, used only to show an
+  // accurate on-screen preview. Cleared/ignored if it no longer matches
+  // followUpTemplateName above (e.g. the name was changed since syncing).
+  followUpSyncedTemplate: null,
   // WhatsApp CRM connection - shared by Invoice, Membership, and
   // Follow-up automatic sending (see src/utils/whatsappCloudApi.js).
-  // One API key with the `messages:send` scope covers all three.
+  // One API key with the `messages:send` scope covers sending for all
+  // three; add `templates:read` too if you want to use Follow-ups'
+  // "Sync template" button.
   whatsappCrmBaseUrl: '',
   whatsappCrmApiKey: '',
   // Invoice WhatsApp sending — off (manual wa.me) by default. When
