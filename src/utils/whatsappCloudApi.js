@@ -1,25 +1,23 @@
 // Client for the connected "WhatsApp CRM" backend - the same project's
-// public API used by both Invoice WhatsApp sending (Settings > Invoice
-// WhatsApp sending) and Follow-ups automatic sending (Settings >
-// Follow-up reminders). One connection (Base URL + API key), shared
-// by both features, each with its own on/off switch.
+// public API used by Invoice WhatsApp sending (Settings > Invoice
+// WhatsApp sending), Membership WhatsApp sending (Settings > Membership
+// WhatsApp sending), and Follow-ups automatic sending (Settings >
+// Follow-up reminders). One connection (Base URL + API key), shared by
+// all three features, each with its own on/off switch and its own
+// fixed, Meta-approved template.
 //
 // This app is a static frontend, so it can't hold a Meta permanent
 // access token securely or call graph.facebook.com directly (Meta's
-// Graph API doesn't send CORS headers for browser callers). Instead
-// it points at a small backend that already speaks the WhatsApp Cloud
-// API on your behalf - the paired "WhatsApp CRM" project is built for
-// exactly this, exposing two public endpoints (both under
-// src/app/api/v1/ in that project):
-//   - GET  /api/v1/templates  (scope: templates:read)  - list approved
-//     templates, so this app can offer a "sync templates" action
-//     instead of you re-typing template names/variables by hand.
-//   - POST /api/v1/messages   (scope: messages:send)   - send a
-//     template message.
-// An API key needs both scopes for full functionality (templates:read
-// is only needed for Follow-ups' "Sync templates" button).
+// Graph API doesn't send CORS headers for browser callers). Instead it
+// points at a small backend that already speaks the WhatsApp Cloud API
+// on your behalf - the paired "WhatsApp CRM" project is built for
+// exactly this, exposing a public endpoint (under src/app/api/v1/ in
+// that project):
+//   - POST /api/v1/messages (scope: messages:send) - send a template
+//     message.
+// An API key with the `messages:send` scope covers all three features.
 
-import { formatPhoneE164, buildInvoiceTemplateParams } from './helpers.js'
+import { formatPhoneE164, buildInvoiceTemplateParams, buildMembershipTemplateParams, buildFollowUpApiTemplateParams } from './helpers.js'
 
 export function isCrmConnectionConfigured(settings) {
   return !!(settings.whatsappCrmBaseUrl && settings.whatsappCrmApiKey)
@@ -29,8 +27,16 @@ export function isInvoiceApiConfigured(settings) {
   return !!(settings.invoiceApiEnabled && isCrmConnectionConfigured(settings) && settings.invoiceTemplateName)
 }
 
+export function isMembershipApiConfigured(settings) {
+  return !!(settings.membershipApiEnabled && isCrmConnectionConfigured(settings) && settings.membershipTemplateName)
+}
+
 export function isFollowUpApiConfigured(settings) {
-  return !!(settings.followUpSendMode === 'api' && isCrmConnectionConfigured(settings))
+  return !!(
+    settings.followUpSendMode === 'api' &&
+    isCrmConnectionConfigured(settings) &&
+    settings.followUpTemplateName
+  )
 }
 
 function baseUrlOf(settings) {
@@ -109,58 +115,40 @@ export async function sendInvoiceViaCloudApi(settings, bill) {
   })
 }
 
-// Follow-up-specific wrapper: sends a synced CRM template using the
-// variable mapping configured for it in Settings (see
-// buildFollowUpSyncedTemplateParams in utils/helpers.js).
-export async function sendFollowUpViaCloudApi(settings, { client, template, body, buttonParams }) {
-  if (!isFollowUpApiConfigured(settings)) {
-    return { ok: false, error: 'Follow-up automatic sending is not fully configured in Settings.' }
+// Membership-specific wrapper: builds the template params straight from
+// the membership + plan (see buildMembershipTemplateParams in
+// utils/helpers.js) - mirrors sendInvoiceViaCloudApi exactly.
+export async function sendMembershipViaCloudApi(settings, membership, plan) {
+  if (!isMembershipApiConfigured(settings)) {
+    return { ok: false, error: 'Membership WhatsApp sending is not fully configured in Settings.' }
   }
+  const { body } = buildMembershipTemplateParams(settings, membership, plan)
   return sendTemplateViaCloudApi(settings, {
-    to: formatPhoneE164(client.phone),
-    contactName: client.name,
-    templateName: template.name,
-    templateLanguage: template.language,
+    to: formatPhoneE164(membership.clientPhone),
+    contactName: membership.clientName,
+    templateName: settings.membershipTemplateName,
+    templateLanguage: settings.membershipTemplateLanguage,
     body,
-    buttonParams,
+    buttonParams: {},
   })
 }
 
-// Fetches the account's approved WhatsApp templates from the connected
-// CRM, for Follow-ups' "Sync templates" action. Returns
-// { ok: true, templates } or { ok: false, error }. Never throws.
-export async function fetchSyncedTemplates(settings) {
-  if (!isCrmConnectionConfigured(settings)) {
-    return { ok: false, error: 'Set the WhatsApp CRM Base URL and API key first.' }
+// Follow-up-specific wrapper: builds the template params straight from
+// the client (see buildFollowUpApiTemplateParams in utils/helpers.js).
+// Always sends the one fixed, Meta-approved follow-up template
+// configured in Settings — no per-template variable mapping, no
+// "sync templates" step, same pattern as invoice/membership sending.
+export async function sendFollowUpViaCloudApi(settings, client) {
+  if (!isFollowUpApiConfigured(settings)) {
+    return { ok: false, error: 'Follow-up automatic sending is not fully configured in Settings.' }
   }
-
-  let response
-  try {
-    response = await fetch(`${baseUrlOf(settings)}/api/v1/templates?status=approved`, {
-      method: 'GET',
-      headers: authHeaders(settings),
-    })
-  } catch {
-    return { ok: false, error: "Couldn't reach the WhatsApp CRM. Check the Base URL and your connection." }
-  }
-
-  if (!response.ok) {
-    let message = `Sync failed (HTTP ${response.status}).`
-    try {
-      const data = await response.json()
-      if (data?.error?.message) message = data.error.message
-    } catch {
-      // Non-JSON error body - keep the generic message above.
-    }
-    return { ok: false, error: message }
-  }
-
-  let data
-  try {
-    data = await response.json()
-  } catch {
-    return { ok: false, error: 'Unexpected response from the WhatsApp CRM.' }
-  }
-
-  return { ok: true, templates: Array.isArray(data?.data) ? data.data : [] }
+  const { body } = buildFollowUpApiTemplateParams(client, settings)
+  return sendTemplateViaCloudApi(settings, {
+    to: formatPhoneE164(client.phone),
+    contactName: client.name,
+    templateName: settings.followUpTemplateName,
+    templateLanguage: settings.followUpTemplateLanguage,
+    body,
+    buttonParams: {},
+  })
 }

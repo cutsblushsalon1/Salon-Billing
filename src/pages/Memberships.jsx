@@ -9,10 +9,10 @@ import {
   CalendarClock,
   Users as UsersIcon,
   Check,
-  Share2,
 } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, Modal, EmptyState, Badge, StatCard } from '../components/ui.jsx'
+import MembershipWhatsAppButton from '../components/MembershipWhatsAppButton.jsx'
 import {
   formatCurrency,
   formatDate,
@@ -20,8 +20,6 @@ import {
   getPlanDiscountFields,
   getPlanFreeServiceIds,
   getPlanFreeServiceCount,
-  whatsappMembershipMessage,
-  whatsappLink,
   matchesCatalogQuery,
   uid,
 } from '../utils/helpers.js'
@@ -43,14 +41,10 @@ const emptyPlanForm = {
   anniversaryDiscountPercentProduct: '',
   commissionAmount: '',
   freeServiceValidityMonths: '',
-  // Both which services are free, and how many, can differ by gender
-  // (ticket values — and how many free visits make sense — are usually
-  // different for men vs women), so these are tracked as separate
-  // lists/counts per gender.
-  freeServiceCountMale: '',
-  freeServiceCountFemale: '',
-  freeServiceIdsMale: [],
-  freeServiceIdsFemale: [],
+  // Free services included with the plan — the same list and count
+  // apply to every enrolled member, regardless of gender.
+  freeServiceCount: '',
+  freeServiceIds: [],
   description: '',
 }
 const emptyEnrollForm = { name: '', phone: '', birthday: '', anniversary: '', planId: '', startDate: '', staffId: '' }
@@ -146,21 +140,13 @@ export default function Memberships() {
       anniversaryDiscountPercentProduct: f.anniversaryProduct || '',
       commissionAmount: p.commissionAmount || '',
       freeServiceValidityMonths: p.freeServiceValidityMonths || '',
-      // Upgrade path for plans saved before the male/female split existed:
-      // prefill both from the old shared fields so nothing silently
-      // disappears the first time an old plan is edited.
-      freeServiceCountMale: p.freeServiceCountMale ?? p.freeServiceCount ?? '',
-      freeServiceCountFemale: p.freeServiceCountFemale ?? p.freeServiceCount ?? '',
-      freeServiceIdsMale: Array.isArray(p.freeServiceIdsMale)
-        ? p.freeServiceIdsMale
-        : Array.isArray(p.freeServiceIds)
-        ? p.freeServiceIds
-        : [],
-      freeServiceIdsFemale: Array.isArray(p.freeServiceIdsFemale)
-        ? p.freeServiceIdsFemale
-        : Array.isArray(p.freeServiceIds)
-        ? p.freeServiceIds
-        : [],
+      // Upgrade path for plans saved before genders were unified: prefill
+      // from getPlanFreeServiceCount/Ids, which already merge any old
+      // freeServiceCountMale/Female + freeServiceIdsMale/Female fields,
+      // so nothing silently disappears the first time an old plan is
+      // edited.
+      freeServiceCount: getPlanFreeServiceCount(p) || '',
+      freeServiceIds: getPlanFreeServiceIds(p),
       description: p.description || '',
     })
     setEditingPlanId(p.id)
@@ -183,18 +169,8 @@ export default function Memberships() {
       anniversaryDiscountPercentProduct: Number(planForm.anniversaryDiscountPercentProduct) || 0,
       commissionAmount: Number(planForm.commissionAmount) || 0,
       freeServiceValidityMonths: Number(planForm.freeServiceValidityMonths) || 0,
-      freeServiceCountMale: Number(planForm.freeServiceCountMale) || 0,
-      freeServiceCountFemale: Number(planForm.freeServiceCountFemale) || 0,
-      // Kept in sync as the larger of the two, purely so anything still
-      // reading the old shared field (e.g. an older export/report) doesn't
-      // see it as empty.
-      freeServiceCount: Math.max(Number(planForm.freeServiceCountMale) || 0, Number(planForm.freeServiceCountFemale) || 0),
-      freeServiceIdsMale: planForm.freeServiceIdsMale,
-      freeServiceIdsFemale: planForm.freeServiceIdsFemale,
-      // Kept in sync as the union of both, purely so anything still reading
-      // the old shared field (e.g. an older export/report) doesn't see it
-      // as empty.
-      freeServiceIds: Array.from(new Set([...planForm.freeServiceIdsMale, ...planForm.freeServiceIdsFemale])),
+      freeServiceCount: Number(planForm.freeServiceCount) || 0,
+      freeServiceIds: planForm.freeServiceIds,
       description: planForm.description,
     })
     setPlanModalOpen(false)
@@ -274,11 +250,10 @@ export default function Memberships() {
     setRenewTarget(null)
   }
 
-  function toggleFreePlanService(gender, serviceId) {
-    const key = gender === 'Male' ? 'freeServiceIdsMale' : 'freeServiceIdsFemale'
+  function toggleFreePlanService(serviceId) {
     setPlanForm((s) => {
-      const has = s[key].includes(serviceId)
-      return { ...s, [key]: has ? s[key].filter((id) => id !== serviceId) : [...s[key], serviceId] }
+      const has = s.freeServiceIds.includes(serviceId)
+      return { ...s, freeServiceIds: has ? s.freeServiceIds.filter((id) => id !== serviceId) : [...s.freeServiceIds, serviceId] }
     })
   }
 
@@ -463,14 +438,14 @@ export default function Memberships() {
                         💼 Staff commission: {formatCurrency(p.commissionAmount, settings.currencySymbol)} per sale
                       </div>
                     )}
-                    {(getPlanFreeServiceCount(p, 'Female') > 0 || getPlanFreeServiceCount(p, 'Male') > 0) && (
+                    {getPlanFreeServiceCount(p) > 0 && (
                       <div className="mb-4 text-[11px] text-success bg-success/10 rounded-lg p-2.5 space-y-0.5">
                         <p className="font-medium">
                           🎁 Free services · valid {p.freeServiceValidityMonths || p.validityMonths} month
                           {(p.freeServiceValidityMonths || p.validityMonths) === 1 ? '' : 's'}
                         </p>
                         <p className="text-success/80">
-                          {getPlanFreeServiceCount(p, 'Female')} for women · {getPlanFreeServiceCount(p, 'Male')} for men
+                          {getPlanFreeServiceCount(p)} free service{getPlanFreeServiceCount(p) === 1 ? '' : 's'} — for every member
                         </p>
                       </div>
                     )}
@@ -638,42 +613,32 @@ export default function Memberships() {
           <div className="rounded-lg border border-black/5 p-3 space-y-3 bg-black/[0.015]">
             <p className="text-xs font-semibold text-ink flex items-center gap-1.5">🎁 Free services included</p>
             <p className="text-[11px] text-muted -mt-1">
-              How many free services (and which ones) often differs for women vs men, so set each separately.
+              Available to every member on this plan — the same count and the same list of services for both male and
+              female clients.
             </p>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="label text-[11px]">Free services for women</label>
+                <label className="label text-[11px]">Number of free services</label>
                 <input
                   className="input"
                   type="number"
                   min="0"
                   placeholder="e.g. 2"
-                  value={planForm.freeServiceCountFemale}
-                  onChange={(e) => setPlanForm((s) => ({ ...s, freeServiceCountFemale: e.target.value }))}
+                  value={planForm.freeServiceCount}
+                  onChange={(e) => setPlanForm((s) => ({ ...s, freeServiceCount: e.target.value }))}
                 />
               </div>
               <div>
-                <label className="label text-[11px]">Free services for men</label>
+                <label className="label text-[11px]">Valid for (months)</label>
                 <input
                   className="input"
                   type="number"
                   min="0"
-                  placeholder="e.g. 2"
-                  value={planForm.freeServiceCountMale}
-                  onChange={(e) => setPlanForm((s) => ({ ...s, freeServiceCountMale: e.target.value }))}
+                  placeholder={`Default: ${planForm.validityMonths || 'plan validity'}`}
+                  value={planForm.freeServiceValidityMonths}
+                  onChange={(e) => setPlanForm((s) => ({ ...s, freeServiceValidityMonths: e.target.value }))}
                 />
               </div>
-            </div>
-            <div>
-              <label className="label text-[11px]">Valid for (months)</label>
-              <input
-                className="input"
-                type="number"
-                min="0"
-                placeholder={`Default: ${planForm.validityMonths || 'plan validity'}`}
-                value={planForm.freeServiceValidityMonths}
-                onChange={(e) => setPlanForm((s) => ({ ...s, freeServiceValidityMonths: e.target.value }))}
-              />
             </div>
             <div>
               <label className="label text-[11px] mb-1">Services offered for free</label>
@@ -690,54 +655,26 @@ export default function Memberships() {
                       onChange={(e) => setFreeServiceQuery(e.target.value)}
                     />
                   </div>
-                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <p className="text-[11px] font-semibold text-ink mb-1">For female clients</p>
-                      <div className="max-h-36 overflow-y-auto border border-black/10 rounded-lg divide-y divide-black/5">
-                        {freeServiceMatches.length === 0 ? (
-                          <p className="text-xs text-muted px-3 py-2">No services match "{freeServiceQuery}".</p>
-                        ) : (
-                          freeServiceMatches.map((sv) => (
-                            <label key={sv.id} className="flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer hover:bg-black/[0.02]">
-                              <input
-                                type="checkbox"
-                                checked={planForm.freeServiceIdsFemale.includes(sv.id)}
-                                onChange={() => toggleFreePlanService('Female', sv.id)}
-                              />
-                              <span className="text-ink">{sv.name}</span>
-                              <span className="text-muted ml-auto">{formatCurrency(sv.price, settings.currencySymbol)}</span>
-                            </label>
-                          ))
-                        )}
-                      </div>
-                      {planForm.freeServiceIdsFemale.length > 0 && (
-                        <p className="text-xs text-muted mt-1.5">{planForm.freeServiceIdsFemale.length} service(s) selected.</p>
-                      )}
-                    </div>
-                    <div>
-                      <p className="text-[11px] font-semibold text-ink mb-1">For male clients</p>
-                      <div className="max-h-36 overflow-y-auto border border-black/10 rounded-lg divide-y divide-black/5">
-                        {freeServiceMatches.length === 0 ? (
-                          <p className="text-xs text-muted px-3 py-2">No services match "{freeServiceQuery}".</p>
-                        ) : (
-                          freeServiceMatches.map((sv) => (
-                            <label key={sv.id} className="flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer hover:bg-black/[0.02]">
-                              <input
-                                type="checkbox"
-                                checked={planForm.freeServiceIdsMale.includes(sv.id)}
-                                onChange={() => toggleFreePlanService('Male', sv.id)}
-                              />
-                              <span className="text-ink">{sv.name}</span>
-                              <span className="text-muted ml-auto">{formatCurrency(sv.price, settings.currencySymbol)}</span>
-                            </label>
-                          ))
-                        )}
-                      </div>
-                      {planForm.freeServiceIdsMale.length > 0 && (
-                        <p className="text-xs text-muted mt-1.5">{planForm.freeServiceIdsMale.length} service(s) selected.</p>
-                      )}
-                    </div>
+                  <div className="mt-2 max-h-44 overflow-y-auto border border-black/10 rounded-lg divide-y divide-black/5">
+                    {freeServiceMatches.length === 0 ? (
+                      <p className="text-xs text-muted px-3 py-2">No services match "{freeServiceQuery}".</p>
+                    ) : (
+                      freeServiceMatches.map((sv) => (
+                        <label key={sv.id} className="flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer hover:bg-black/[0.02]">
+                          <input
+                            type="checkbox"
+                            checked={planForm.freeServiceIds.includes(sv.id)}
+                            onChange={() => toggleFreePlanService(sv.id)}
+                          />
+                          <span className="text-ink">{sv.name}</span>
+                          <span className="text-muted ml-auto">{formatCurrency(sv.price, settings.currencySymbol)}</span>
+                        </label>
+                      ))
+                    )}
                   </div>
+                  {planForm.freeServiceIds.length > 0 && (
+                    <p className="text-xs text-muted mt-1.5">{planForm.freeServiceIds.length} service(s) selected.</p>
+                  )}
                 </>
               )}
             </div>
@@ -920,19 +857,11 @@ export default function Memberships() {
               )}
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {enrolledMembership.membership.clientPhone && (
-                <a
-                  href={whatsappLink(
-                    enrolledMembership.membership.clientPhone,
-                    whatsappMembershipMessage(settings, enrolledMembership.membership, enrolledMembership.plan),
-                  )}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="btn-brass"
-                >
-                  <Share2 size={15} /> Share on WhatsApp
-                </a>
-              )}
+              <MembershipWhatsAppButton
+                membership={enrolledMembership.membership}
+                plan={enrolledMembership.plan}
+                settings={settings}
+              />
               <button onClick={() => setEnrolledMembership(null)} className="btn-primary ml-auto">
                 Done
               </button>

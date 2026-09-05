@@ -451,18 +451,17 @@ export const defaultSettings = {
   followUpEnabled: true,
   followUpDays: 25,
   followUpDefaultTemplateId: 'tpl_1',
-  // 'manual' - your own custom templates below, sent via a wa.me link
-  // you tap to send yourself. 'api' - a template synced from the
-  // connected WhatsApp CRM, sent automatically with no manual step
-  // (see followUpSyncedTemplates / followUpSyncedTemplateMappings).
+  // 'manual' - your own custom templates below (Follow-ups → Templates),
+  // sent via a wa.me link you tap to send yourself. 'api' - one fixed,
+  // Meta-approved WhatsApp template, sent automatically with no manual
+  // step (see followUpTemplateName / followUpTemplateLanguage below) -
+  // same pattern as Invoice WhatsApp sending, just for follow-ups.
   followUpSendMode: 'manual',
-  followUpSyncedTemplates: [],
-  followUpSyncedTemplateMappings: {},
-  followUpApiTemplateId: '',
-  // WhatsApp CRM connection - shared by Invoice WhatsApp sending and
-  // Follow-ups automatic sending (see src/utils/whatsappCloudApi.js).
-  // One API key with the `messages:send` and `templates:read` scopes
-  // covers both.
+  followUpTemplateName: 'followup_reminder',
+  followUpTemplateLanguage: 'en',
+  // WhatsApp CRM connection - shared by Invoice, Membership, and
+  // Follow-up automatic sending (see src/utils/whatsappCloudApi.js).
+  // One API key with the `messages:send` scope covers all three.
   whatsappCrmBaseUrl: '',
   whatsappCrmApiKey: '',
   // Invoice WhatsApp sending — off (manual wa.me) by default. When
@@ -472,6 +471,13 @@ export const defaultSettings = {
   invoiceApiEnabled: false,
   invoiceTemplateName: 'invoice_created',
   invoiceTemplateLanguage: 'en',
+  // Membership WhatsApp sending — off (manual wa.me) by default. When
+  // enabled, the membership activation message is sent through the
+  // approved WhatsApp template via the connected WhatsApp CRM instead of
+  // opening a wa.me link, same pattern as Invoice WhatsApp sending.
+  membershipApiEnabled: false,
+  membershipTemplateName: 'membership_activated',
+  membershipTemplateLanguage: 'en',
 }
 
 export const seedTemplates = [

@@ -21,8 +21,7 @@ import {
 } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, Modal } from '../components/ui.jsx'
-import { sendInvoiceViaCloudApi, fetchSyncedTemplates, isCrmConnectionConfigured } from '../utils/whatsappCloudApi.js'
-import { FOLLOWUP_TOKENS } from '../utils/helpers.js'
+import { sendInvoiceViaCloudApi, sendMembershipViaCloudApi, sendFollowUpViaCloudApi, isCrmConnectionConfigured } from '../utils/whatsappCloudApi.js'
 
 export default function Settings() {
   const {
@@ -57,24 +56,14 @@ export default function Settings() {
   const [testPhone, setTestPhone] = useState('')
   const [testStatus, setTestStatus] = useState('idle') // idle | sending | sent | error
   const [testError, setTestError] = useState('')
-  const [syncStatus, setSyncStatus] = useState('idle') // idle | syncing | synced | error
-  const [syncError, setSyncError] = useState('')
+  const [testMembershipPhone, setTestMembershipPhone] = useState('')
+  const [testMembershipStatus, setTestMembershipStatus] = useState('idle') // idle | sending | sent | error
+  const [testMembershipError, setTestMembershipError] = useState('')
+  const [testFollowUpPhone, setTestFollowUpPhone] = useState('')
+  const [testFollowUpStatus, setTestFollowUpStatus] = useState('idle') // idle | sending | sent | error
+  const [testFollowUpError, setTestFollowUpError] = useState('')
 
   const NTFY_TOPIC = 'CutsBlushSalonAppointmentsNotification'
-
-  async function handleSyncFollowUpTemplates() {
-    setSyncStatus('syncing')
-    setSyncError('')
-    const result = await fetchSyncedTemplates(form)
-    if (result.ok) {
-      setForm((s) => ({ ...s, followUpSyncedTemplates: result.templates }))
-      setSyncStatus('synced')
-      setTimeout(() => setSyncStatus('idle'), 3000)
-    } else {
-      setSyncStatus('error')
-      setSyncError(result.error)
-    }
-  }
 
   async function handleSendTestInvoice() {
     setTestStatus('sending')
@@ -94,6 +83,48 @@ export default function Settings() {
     } else {
       setTestStatus('error')
       setTestError(result.error)
+    }
+  }
+
+  async function handleSendTestMembership() {
+    setTestMembershipStatus('sending')
+    setTestMembershipError('')
+    const testMembership = {
+      clientName: 'Test Client',
+      clientPhone: testMembershipPhone,
+      planName: 'Gold Membership',
+      expiryDate: new Date(new Date().setMonth(new Date().getMonth() + 6)).toISOString(),
+      amountPaid: 2999,
+    }
+    // Force-enable for the test call so you can verify the connection
+    // before flipping the toggle on for real activations.
+    const result = await sendMembershipViaCloudApi({ ...settings, ...form, membershipApiEnabled: true }, testMembership, null)
+    if (result.ok) {
+      setTestMembershipStatus('sent')
+      setTimeout(() => setTestMembershipStatus('idle'), 4000)
+    } else {
+      setTestMembershipStatus('error')
+      setTestMembershipError(result.error)
+    }
+  }
+
+  async function handleSendTestFollowUp() {
+    setTestFollowUpStatus('sending')
+    setTestFollowUpError('')
+    const testClient = {
+      name: 'Test Client',
+      phone: testFollowUpPhone,
+      lastVisit: new Date(Date.now() - (Number(form.followUpDays) || 25) * 86400000).toISOString(),
+    }
+    // Force-enable for the test call so you can verify the connection
+    // before flipping the toggle on for real follow-ups.
+    const result = await sendFollowUpViaCloudApi({ ...settings, ...form, followUpSendMode: 'api' }, testClient)
+    if (result.ok) {
+      setTestFollowUpStatus('sent')
+      setTimeout(() => setTestFollowUpStatus('idle'), 4000)
+    } else {
+      setTestFollowUpStatus('error')
+      setTestFollowUpError(result.error)
     }
   }
 
@@ -354,70 +385,91 @@ export default function Settings() {
               <span className="flex items-center gap-1.5">
                 <Zap size={14} className="text-brass-dark shrink-0" />
                 <span>
-                  <span className="font-medium">Automatic via WhatsApp CRM</span> — sends a template synced from your
-                  WhatsApp CRM with no manual step, including a genuine one-click "send to all due" button. Only
-                  approved templates synced below can be used — no custom wording in this mode.
+                  <span className="font-medium">Automatic via WhatsApp CRM</span> — sends one fixed, Meta-approved
+                  template with no manual step, including a genuine one-click "send to all due" button. No custom
+                  wording in this mode — set the approved template's name below (same pattern as Invoice WhatsApp
+                  sending).
                 </span>
               </span>
             </label>
           </div>
 
           {form.followUpSendMode === 'api' && (
-            <div className="rounded-lg bg-plum/5 p-3 space-y-3">
+            <div className="rounded-lg bg-plum/5 p-3 space-y-4">
               {!isCrmConnectionConfigured(form) && (
                 <p className="flex items-start gap-2 text-xs text-ink">
                   <TriangleAlert size={14} className="text-plum mt-0.5 shrink-0" />
-                  Set the <span className="font-medium mx-1">WhatsApp CRM connection</span> below first, then come
-                  back here to sync templates.
+                  Set the <span className="font-medium mx-1">WhatsApp CRM connection</span> below first.
                 </p>
               )}
 
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  onClick={handleSyncFollowUpTemplates}
-                  className="btn-ghost"
-                  disabled={syncStatus === 'syncing' || !isCrmConnectionConfigured(form)}
-                >
-                  {syncStatus === 'syncing' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
-                  {syncStatus === 'syncing' ? 'Syncing…' : 'Sync templates'}
-                </button>
-                <span className="text-xs text-muted">{(form.followUpSyncedTemplates || []).length} template(s) synced</span>
-                {syncStatus === 'synced' && (
-                  <span className="text-success text-xs font-medium flex items-center gap-1">
-                    <CircleCheck size={13} /> Synced
-                  </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="label text-[11px]">Template name</label>
+                  <input
+                    className="input"
+                    value={form.followUpTemplateName}
+                    onChange={(e) => setForm((s) => ({ ...s, followUpTemplateName: e.target.value }))}
+                  />
+                  <p className="text-[11px] text-muted mt-1.5">Must match the approved template's name exactly (case-sensitive).</p>
+                </div>
+                <div>
+                  <label className="label text-[11px]">Template language code</label>
+                  <input
+                    className="input"
+                    placeholder="en"
+                    value={form.followUpTemplateLanguage}
+                    onChange={(e) => setForm((s) => ({ ...s, followUpTemplateLanguage: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted mb-2">Approved template reference</p>
+                <div className="rounded-lg bg-sand/50 px-3 py-3 text-xs text-ink font-mono whitespace-pre-wrap leading-relaxed">
+{`Hi {{1}}, it's been {{2}} days since your last visit to *${form.salonName || 'Cuts & Blush Unisex Salon'}*! We'd love to see you again soon for {{3}}. Book your next appointment today!`}
+                </div>
+                <p className="text-[11px] text-muted mt-2">
+                  {'{{1}}'} client's name, {'{{2}}'} days since last visit, {'{{3}}'} their last service — all generated
+                  automatically per client, never typed in.
+                </p>
+              </div>
+
+              <div className="border-t border-black/5 pt-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted mb-2">Test the connection</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    className="input sm:w-56"
+                    placeholder="Your WhatsApp number"
+                    value={testFollowUpPhone}
+                    onChange={(e) => setTestFollowUpPhone(e.target.value)}
+                  />
+                  <button
+                    onClick={handleSendTestFollowUp}
+                    className="btn-ghost"
+                    disabled={
+                      testFollowUpStatus === 'sending' ||
+                      !testFollowUpPhone.trim() ||
+                      !form.whatsappCrmBaseUrl ||
+                      !form.whatsappCrmApiKey ||
+                      !form.followUpTemplateName
+                    }
+                  >
+                    {testFollowUpStatus === 'sending' ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+                    {testFollowUpStatus === 'sending' ? 'Sending…' : 'Send test follow-up'}
+                  </button>
+                  {testFollowUpStatus === 'sent' && (
+                    <span className="text-success text-sm font-medium flex items-center gap-1">
+                      <CircleCheck size={15} /> Sent — check WhatsApp
+                    </span>
+                  )}
+                </div>
+                {testFollowUpStatus === 'error' && (
+                  <p className="text-xs text-danger mt-2 flex items-center gap-1">
+                    <CircleX size={13} /> {testFollowUpError}
+                  </p>
                 )}
               </div>
-              {syncStatus === 'error' && (
-                <p className="text-xs text-danger flex items-center gap-1">
-                  <CircleX size={13} /> {syncError}
-                </p>
-              )}
-
-              {(form.followUpSyncedTemplates || []).length === 0 ? (
-                <p className="text-xs text-muted">
-                  No templates synced yet. Approve a template in Meta, sync it into your WhatsApp CRM's dashboard,
-                  then click "Sync templates" above to pull it in here.
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {form.followUpSyncedTemplates.map((t) => (
-                    <SyncedTemplateCard
-                      key={t.id}
-                      template={t}
-                      isDefault={form.followUpApiTemplateId === t.id}
-                      mapping={form.followUpSyncedTemplateMappings?.[t.id]}
-                      onSetDefault={() => setForm((s) => ({ ...s, followUpApiTemplateId: t.id }))}
-                      onMappingChange={(mapping) =>
-                        setForm((s) => ({
-                          ...s,
-                          followUpSyncedTemplateMappings: { ...s.followUpSyncedTemplateMappings, [t.id]: mapping },
-                        }))
-                      }
-                    />
-                  ))}
-                </div>
-              )}
             </div>
           )}
         </div>
@@ -430,8 +482,9 @@ export default function Settings() {
           <p className="font-display text-lg text-ink">WhatsApp CRM connection</p>
         </div>
         <p className="text-sm text-muted mb-4">
-          Shared by <span className="font-medium text-ink">Follow-ups automatic sending</span> above and{' '}
-          <span className="font-medium text-ink">Invoice WhatsApp sending</span> below. This app runs in your
+          Shared by <span className="font-medium text-ink">Follow-ups automatic sending</span> above,{' '}
+          <span className="font-medium text-ink">Invoice WhatsApp sending</span>, and{' '}
+          <span className="font-medium text-ink">Membership WhatsApp sending</span> below. This app runs in your
           browser, so it can't hold a Meta access token securely — it points at your WhatsApp CRM deployment
           instead, which already speaks the WhatsApp Cloud API on your behalf.
         </p>
@@ -456,8 +509,8 @@ export default function Settings() {
             />
             <p className="text-xs text-muted mt-1.5">
               Created under Account → API keys in your WhatsApp CRM. Grant{' '}
-              <span className="font-mono">messages:send</span> (both features) and{' '}
-              <span className="font-mono">templates:read</span> (needed for Follow-ups' "Sync templates").
+              <span className="font-mono">messages:send</span> — used by Invoice, Membership, and Follow-up automatic
+              sending.
             </p>
           </div>
         </div>
@@ -566,6 +619,115 @@ Button — View Invoice → https://cutsblushsalon.vercel.app/invoice/{{1}}`}
             </p>
           )}
           <p className="text-xs text-muted mt-2">Sends a real template message with dummy invoice data, using the values above (saved or not).</p>
+        </div>
+      </section>
+
+      {/* Membership WhatsApp sending */}
+      <section className="card p-5 sm:p-6 mt-6">
+        <div className="flex items-center gap-2 mb-4">
+          <MessageCircle size={17} className="text-plum" />
+          <p className="font-display text-lg text-ink">Membership WhatsApp sending</p>
+        </div>
+
+        <label className="flex items-center gap-2.5 text-sm font-medium text-ink mb-3">
+          <input
+            type="checkbox"
+            checked={form.membershipApiEnabled}
+            onChange={(e) => setForm((s) => ({ ...s, membershipApiEnabled: e.target.checked }))}
+            className="w-4 h-4 accent-plum"
+          />
+          <Zap size={15} className="text-brass-dark" /> Send membership activation messages automatically via WhatsApp Cloud API
+        </label>
+
+        <div className="flex items-start gap-2.5 p-3 rounded-lg bg-plum/5 text-xs text-ink mb-4">
+          <TriangleAlert size={15} className="text-plum mt-0.5 shrink-0" />
+          <p>
+            Leave this off (default) and enrolling a member keeps working the manual way — "Share on WhatsApp" opens
+            a pre-filled WhatsApp chat for you to send yourself. Turn it on once the{' '}
+            <span className="font-medium">WhatsApp CRM connection</span> above is set up, and the same button
+            instead sends the approved membership template straight away, with no chat window and no manual step.
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="label">Template name</label>
+              <input
+                className="input"
+                value={form.membershipTemplateName}
+                onChange={(e) => setForm((s) => ({ ...s, membershipTemplateName: e.target.value }))}
+                disabled={!form.membershipApiEnabled}
+              />
+              <p className="text-xs text-muted mt-1.5">Must match the name of the approved template exactly (case-sensitive).</p>
+            </div>
+            <div>
+              <label className="label">Template language code</label>
+              <input
+                className="input"
+                placeholder="en"
+                value={form.membershipTemplateLanguage}
+                onChange={(e) => setForm((s) => ({ ...s, membershipTemplateLanguage: e.target.value }))}
+                disabled={!form.membershipApiEnabled}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="border-t border-black/5 mt-5 pt-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted mb-2">Approved template reference</p>
+          <div className="rounded-lg bg-sand/50 px-3 py-3 text-xs text-ink font-mono whitespace-pre-wrap leading-relaxed">
+{`Hello {{1}}, welcome to *${form.salonName || 'Cuts & Blush Unisex Salon'}*!
+
+You're now enrolled in our *{{2}}* membership, valid till *{{3}}*.
+
+*Amount paid:* {{4}}
+
+Thanks for choosing us as your salon partner.
+
+Team ${form.salonName || 'Cuts & Blush Unisex Salon'}`}
+          </div>
+          <p className="text-xs text-muted mt-2">
+            {'{{1}}'} name, {'{{2}}'} plan name, {'{{3}}'} valid-till date, {'{{4}}'} amount paid — all four are
+            generated automatically from the membership, never typed in.
+          </p>
+        </div>
+
+        <div className="border-t border-black/5 mt-5 pt-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted mb-2">Test the connection</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              className="input sm:w-56"
+              placeholder="Your WhatsApp number"
+              value={testMembershipPhone}
+              onChange={(e) => setTestMembershipPhone(e.target.value)}
+            />
+            <button
+              onClick={handleSendTestMembership}
+              className="btn-ghost"
+              disabled={
+                testMembershipStatus === 'sending' ||
+                !testMembershipPhone.trim() ||
+                !form.whatsappCrmBaseUrl ||
+                !form.whatsappCrmApiKey ||
+                !form.membershipTemplateName
+              }
+            >
+              {testMembershipStatus === 'sending' ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+              {testMembershipStatus === 'sending' ? 'Sending…' : 'Send test membership message'}
+            </button>
+            {testMembershipStatus === 'sent' && (
+              <span className="text-success text-sm font-medium flex items-center gap-1">
+                <CircleCheck size={15} /> Sent — check WhatsApp
+              </span>
+            )}
+          </div>
+          {testMembershipStatus === 'error' && (
+            <p className="text-xs text-danger mt-2 flex items-center gap-1">
+              <CircleX size={13} /> {testMembershipError}
+            </p>
+          )}
+          <p className="text-xs text-muted mt-2">Sends a real template message with dummy membership data, using the values above (saved or not).</p>
         </div>
       </section>
 
@@ -755,92 +917,6 @@ Button — View Invoice → https://cutsblushsalon.vercel.app/invoice/{{1}}`}
           </div>
         </div>
       </Modal>
-    </div>
-  )
-}
-
-// One synced WhatsApp CRM template's card: shows its (read-only,
-// Meta-approved) body text, lets the admin map each {{n}} body
-// variable and any URL button variable onto one of FOLLOWUP_TOKENS,
-// and mark it the default template for automatic follow-up sending.
-// Local to Settings.jsx - only used here.
-function SyncedTemplateCard({ template, isDefault, mapping, onSetDefault, onMappingChange }) {
-  const bodyMapping = mapping?.body || Array(template.body_variable_count).fill('')
-  const buttonParamsMapping = mapping?.buttonParams || {}
-
-  function updateBodyVar(index, value) {
-    const next = [...bodyMapping]
-    next[index] = value
-    onMappingChange({ body: next, buttonParams: buttonParamsMapping })
-  }
-
-  function updateButtonVar(buttonIndex, value) {
-    onMappingChange({ body: bodyMapping, buttonParams: { ...buttonParamsMapping, [buttonIndex]: value } })
-  }
-
-  const urlButtonsWithVars = (template.buttons || [])
-    .map((b, i) => ({ ...b, index: i }))
-    .filter((b) => b.type === 'URL' && b.variable_count > 0)
-
-  return (
-    <div className="rounded-lg border border-black/10 p-3 bg-paper">
-      <div className="flex items-start justify-between gap-2 mb-2">
-        <div>
-          <p className="text-sm font-medium text-ink">{template.name}</p>
-          <p className="text-xs text-muted">
-            {template.language} · {template.category}
-          </p>
-        </div>
-        <button
-          onClick={onSetDefault}
-          className={`text-xs px-2.5 py-1 rounded-full border shrink-0 ${
-            isDefault ? 'bg-plum text-cream border-plum' : 'border-black/10 text-muted hover:bg-black/5'
-          }`}
-        >
-          {isDefault ? 'Default' : 'Set default'}
-        </button>
-      </div>
-
-      <p className="text-xs font-mono text-ink bg-sand/50 rounded-lg p-2 whitespace-pre-wrap mb-2.5 leading-relaxed">
-        {template.body_text}
-      </p>
-
-      {(template.body_variable_count > 0 || urlButtonsWithVars.length > 0) && (
-        <div className="space-y-1.5">
-          {Array.from({ length: template.body_variable_count }).map((_, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <span className="text-xs text-muted w-12 shrink-0 font-mono">{`{{${i + 1}}}`}</span>
-              <select className="input text-xs py-1.5" value={bodyMapping[i] || ''} onChange={(e) => updateBodyVar(i, e.target.value)}>
-                <option value="">Choose a value…</option>
-                {FOLLOWUP_TOKENS.map((tk) => (
-                  <option key={tk.key} value={tk.key}>
-                    {tk.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ))}
-          {urlButtonsWithVars.map((b) => (
-            <div key={b.index} className="flex items-center gap-2">
-              <span className="text-xs text-muted w-12 shrink-0" title={`Button: ${b.text}`}>
-                Button
-              </span>
-              <select
-                className="input text-xs py-1.5"
-                value={buttonParamsMapping[b.index] || ''}
-                onChange={(e) => updateButtonVar(b.index, e.target.value)}
-              >
-                <option value="">Choose a value…</option>
-                {FOLLOWUP_TOKENS.map((tk) => (
-                  <option key={tk.key} value={tk.key}>
-                    {tk.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   )
 }

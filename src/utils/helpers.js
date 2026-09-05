@@ -134,6 +134,21 @@ export function buildInvoiceTemplateParams(settings, bill) {
   }
 }
 
+// Builds the dynamic values for the approved "membership activated"
+// WhatsApp template (see Settings > Membership WhatsApp sending for the
+// template copy) directly from the membership + plan, the same way
+// buildInvoiceTemplateParams does for invoices:
+//   {{1}} name, {{2}} plan name, {{3}} valid-till date, {{4}} amount paid
+export function buildMembershipTemplateParams(settings, membership, plan) {
+  const name = membership.clientName || 'there'
+  const planName = membership.planName || plan?.name || 'Membership'
+  const validTill = formatInvoiceTemplateDate(membership.expiryDate)
+  const amountPaid = formatCurrency(membership.amountPaid, settings.currencySymbol)
+  return {
+    body: [name, planName, validTill, amountPaid],
+  }
+}
+
 export function daysSince(dateStr) {
   const start = new Date(dateStr)
   start.setHours(0, 0, 0, 0)
@@ -158,9 +173,9 @@ export function getClientLastService(client) {
 
 // The fixed set of client-context values available to plug into a
 // follow-up message - used both by custom {token} templates
-// (renderTemplate, below) and, for automatic sending, as the pool of
-// values an admin can map onto a synced WhatsApp template's {{n}}
-// variables in Settings (see buildFollowUpSyncedTemplateParams).
+// (renderTemplate, below) and, for automatic sending, to fill in the
+// fixed approved WhatsApp template's params (see
+// buildFollowUpApiTemplateParams).
 export const FOLLOWUP_TOKENS = [
   { key: 'clientName', label: "Client's name" },
   { key: 'salonName', label: 'Your salon name' },
@@ -184,23 +199,34 @@ export function buildFollowUpMessage(template, client, settings) {
   return renderTemplate(template.body, tokens)
 }
 
-// Builds body/button params for a *synced* WhatsApp CRM template (see
-// FollowUps automatic sending) using the variable-to-token mapping an
-// admin configured for it in Settings. `mapping` is
-// `settings.followUpSyncedTemplateMappings[template.id]`, shaped
-// `{ body: [tokenKey, ...], buttonParams: { [buttonIndex]: tokenKey } }`.
-// A variable with no mapping configured yet resolves to an empty
-// string rather than throwing, so an incomplete setup fails loudly on
-// WhatsApp's side (an obviously-blank field) instead of crashing here.
-export function buildFollowUpSyncedTemplateParams(client, settings, mapping) {
-  const tokenValues = buildFollowUpTokenValues(client, settings)
-  const resolve = (tokenKey) => (tokenKey ? tokenValues[tokenKey] ?? '' : '')
-  const body = (mapping?.body || []).map(resolve)
-  const buttonParams = {}
-  Object.entries(mapping?.buttonParams || {}).forEach(([index, tokenKey]) => {
-    buttonParams[index] = resolve(tokenKey)
-  })
-  return { body, buttonParams }
+// The approved "follow-up" WhatsApp template's copy (see Settings >
+// Follow-up reminders > Automatic sending), shown as a read-only
+// reference in Settings and used to render an on-screen preview in
+// Follow-ups. What actually gets sent is the structured template name +
+// body params (buildFollowUpApiTemplateParams below), not this string.
+export const FOLLOWUP_API_TEMPLATE_TEXT =
+  "Hi {{1}}, it's been {{2}} days since your last visit to *{{3}}*! We'd love to see you again soon for {{4}}. Book your next appointment today!"
+
+// Builds the dynamic values for the approved follow-up WhatsApp template
+// directly from the client, the same way buildInvoiceTemplateParams does
+// for invoices — one fixed, Meta-approved template for every automatic
+// follow-up, no per-template variable mapping needed:
+//   {{1}} client's name, {{2}} days since last visit, {{3}} salon name,
+//   {{4}} the last service they had (or "next service" if unknown)
+export function buildFollowUpApiTemplateParams(client, settings) {
+  const tokens = buildFollowUpTokenValues(client, settings)
+  return {
+    body: [tokens.clientName, tokens.daysSinceVisit, tokens.salonName, tokens.lastService],
+  }
+}
+
+// Renders the approved follow-up template's copy with a given client's
+// values filled in, for on-screen preview only (what actually gets sent
+// is the structured template + params, not this string).
+export function previewFollowUpApiTemplate(client, settings) {
+  const { body } = buildFollowUpApiTemplateParams(client, settings)
+  let i = 0
+  return FOLLOWUP_API_TEMPLATE_TEXT.replace(/\{\{\d+\}\}/g, () => body[i++] ?? '')
 }
 
 export function getBillStaffNames(bill) {
@@ -331,40 +357,35 @@ export function getMembershipDiscountInfo(client, membership, plan, refDate = ne
 // normal % discount applies instead — the free perk never blocks the
 // regular member discount.
 //
-// Both WHICH services are free and HOW MANY of them can differ by gender
-// (ticket values, and how many "free" visits make sense, are usually
-// different for men and women), so a plan carries two lists —
-// `freeServiceIdsMale` / `freeServiceIdsFemale` — and two counts —
-// `freeServiceCountMale` / `freeServiceCountFemale`. `freeServiceIds` /
-// `freeServiceCount` are kept as legacy fallbacks for plans saved before the
-// male/female split existed, used for either gender (or when the client's
-// gender isn't set) if no gender-specific value is present.
-export function getPlanFreeServiceIds(plan, gender) {
+// The free-service perk applies the same way to every member regardless of
+// gender — one shared list (`freeServiceIds`) and one shared count
+// (`freeServiceCount`) that any enrolled client, male or female, can use.
+// Plans saved before this was unified may still carry separate
+// `freeServiceIdsMale`/`freeServiceIdsFemale` and
+// `freeServiceCountMale`/`freeServiceCountFemale` fields — those are merged
+// in automatically (union of both lists, larger of both counts) so nothing
+// a salon already configured silently disappears.
+export function getPlanFreeServiceIds(plan) {
   if (!plan) return []
-  const male = Array.isArray(plan.freeServiceIdsMale) ? plan.freeServiceIdsMale : null
-  const female = Array.isArray(plan.freeServiceIdsFemale) ? plan.freeServiceIdsFemale : null
-  if (gender === 'Male' && male) return male
-  if (gender === 'Female' && female) return female
-  if (male || female) return (gender === 'Male' ? male : female) || []
-  return Array.isArray(plan.freeServiceIds) ? plan.freeServiceIds : []
+  if (Array.isArray(plan.freeServiceIds)) return plan.freeServiceIds
+  const male = Array.isArray(plan.freeServiceIdsMale) ? plan.freeServiceIdsMale : []
+  const female = Array.isArray(plan.freeServiceIdsFemale) ? plan.freeServiceIdsFemale : []
+  return Array.from(new Set([...male, ...female]))
 }
 
-export function getPlanFreeServiceCount(plan, gender) {
+export function getPlanFreeServiceCount(plan) {
   if (!plan) return 0
-  const male = plan.freeServiceCountMale
-  const female = plan.freeServiceCountFemale
-  const hasMale = male !== undefined && male !== null && male !== ''
-  const hasFemale = female !== undefined && female !== null && female !== ''
-  if (gender === 'Male' && hasMale) return Number(male) || 0
-  if (gender === 'Female' && hasFemale) return Number(female) || 0
-  if (hasMale || hasFemale) return Number(gender === 'Male' ? male : female) || 0
-  return Number(plan.freeServiceCount) || 0
+  const hasUnified = plan.freeServiceCount !== undefined && plan.freeServiceCount !== null && plan.freeServiceCount !== ''
+  if (hasUnified) return Number(plan.freeServiceCount) || 0
+  const male = Number(plan.freeServiceCountMale) || 0
+  const female = Number(plan.freeServiceCountFemale) || 0
+  return Math.max(male, female)
 }
 
-export function getMembershipFreeServiceInfo(membership, plan, refDate = new Date(), gender) {
+export function getMembershipFreeServiceInfo(membership, plan, refDate = new Date()) {
   if (!membership || !plan) return null
-  const serviceIds = getPlanFreeServiceIds(plan, gender)
-  const totalFree = getPlanFreeServiceCount(plan, gender)
+  const serviceIds = getPlanFreeServiceIds(plan)
+  const totalFree = getPlanFreeServiceCount(plan)
   if (serviceIds.length === 0 || totalFree === 0) return null
 
   const windowMonths = Number(plan.freeServiceValidityMonths) || Number(plan.validityMonths) || 0

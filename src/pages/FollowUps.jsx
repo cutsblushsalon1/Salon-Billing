@@ -24,13 +24,13 @@ import {
   formatDate,
   daysSince,
   buildFollowUpMessage,
-  buildFollowUpSyncedTemplateParams,
+  previewFollowUpApiTemplate,
   whatsappLink,
   findActiveMembership,
   getMembershipStatus,
   uid,
 } from '../utils/helpers.js'
-import { sendFollowUpViaCloudApi } from '../utils/whatsappCloudApi.js'
+import { sendFollowUpViaCloudApi, isFollowUpApiConfigured } from '../utils/whatsappCloudApi.js'
 
 const TABS = [
   { id: 'due', label: 'Due for follow-up', icon: Bell },
@@ -44,16 +44,6 @@ const TOKEN_HELP = [
   ['{daysSinceVisit}', 'Days since their last visit'],
   ['{lastService}', 'The last service they had'],
 ]
-
-// Renders a synced WhatsApp template's approved body text with its
-// mapped values filled in, for on-screen preview only (what actually
-// gets sent is the structured template + params, not this string).
-function previewSyncedTemplateBody(apiTemplate, mapping, client, settings) {
-  if (!apiTemplate) return ''
-  const { body } = buildFollowUpSyncedTemplateParams(client, settings, mapping)
-  let i = 0
-  return apiTemplate.body_text.replace(/\{\{\d+\}\}/g, () => body[i++] ?? '')
-}
 
 export default function FollowUps() {
   const { clients, templates, followUps, settings, clientMemberships } = useApp()
@@ -118,11 +108,7 @@ function DueTab({ dueClients }) {
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const isApiMode = settings.followUpSendMode === 'api'
-
-  const syncedTemplates = settings.followUpSyncedTemplates || []
-  const apiTemplate =
-    syncedTemplates.find((t) => t.id === settings.followUpApiTemplateId) || syncedTemplates[0] || null
-  const apiMapping = apiTemplate ? settings.followUpSyncedTemplateMappings?.[apiTemplate.id] : null
+  const apiConfigured = isFollowUpApiConfigured(settings)
 
   const manualTemplate = templates.find((t) => t.id === settings.followUpDefaultTemplateId) || templates[0]
   const [manualTemplateId, setManualTemplateId] = useState(manualTemplate?.id || '')
@@ -156,19 +142,18 @@ function DueTab({ dueClients }) {
   }
 
   function previewFor(client) {
-    if (isApiMode) return previewSyncedTemplateBody(apiTemplate, apiMapping, client, settings)
+    if (isApiMode) return previewFollowUpApiTemplate(client, settings)
     return selectedManualTemplate ? buildFollowUpMessage(selectedManualTemplate, client, settings) : ''
   }
 
   async function sendOneApi(client) {
     setSendingId(client.id)
-    const { body, buttonParams } = buildFollowUpSyncedTemplateParams(client, settings, apiMapping)
-    const result = await sendFollowUpViaCloudApi(settings, { client, template: apiTemplate, body, buttonParams })
+    const result = await sendFollowUpViaCloudApi(settings, client)
     if (result.ok) {
       logFollowUp({
         clientId: client.id,
-        templateId: apiTemplate.id,
-        templateName: apiTemplate.name,
+        templateId: 'api',
+        templateName: settings.followUpTemplateName,
         message: previewFor(client),
         method: 'api',
       })
@@ -186,7 +171,7 @@ function DueTab({ dueClients }) {
 
   function sendOne(client) {
     if (isApiMode) {
-      if (!apiTemplate) return
+      if (!apiConfigured) return
       sendOneApi(client)
     } else {
       if (!selectedManualTemplate) return
@@ -196,25 +181,34 @@ function DueTab({ dueClients }) {
 
   function markContacted(client) {
     const message = previewFor(client)
-    const template = isApiMode ? apiTemplate : selectedManualTemplate
-    if (!template) return
-    logFollowUp({ clientId: client.id, templateId: template.id, templateName: template.name, message, method: 'manual' })
+    if (isApiMode) {
+      if (!apiConfigured) return
+      logFollowUp({ clientId: client.id, templateId: 'api', templateName: settings.followUpTemplateName, message, method: 'manual' })
+      return
+    }
+    if (!selectedManualTemplate) return
+    logFollowUp({
+      clientId: client.id,
+      templateId: selectedManualTemplate.id,
+      templateName: selectedManualTemplate.name,
+      message,
+      method: 'manual',
+    })
   }
 
   // Genuine one-click batch send - only available in API mode, since
   // manual mode has to open one WhatsApp chat per client (see
   // SendQueueModal below).
   async function sendBulkApi(targets) {
-    if (!apiTemplate || targets.length === 0) return
+    if (!apiConfigured || targets.length === 0) return
     setBulkState({ total: targets.length, done: 0, failed: 0 })
     for (const client of targets) {
-      const { body, buttonParams } = buildFollowUpSyncedTemplateParams(client, settings, apiMapping)
-      const result = await sendFollowUpViaCloudApi(settings, { client, template: apiTemplate, body, buttonParams })
+      const result = await sendFollowUpViaCloudApi(settings, client)
       if (result.ok) {
         logFollowUp({
           clientId: client.id,
-          templateId: apiTemplate.id,
-          templateName: apiTemplate.name,
+          templateId: 'api',
+          templateName: settings.followUpTemplateName,
           message: previewFor(client),
           method: 'api',
         })
@@ -252,12 +246,12 @@ function DueTab({ dueClients }) {
     )
   }
 
-  if (isApiMode && !apiTemplate) {
+  if (isApiMode && !apiConfigured) {
     return (
       <EmptyState
         icon={SettingsIcon}
-        title="No synced WhatsApp template selected"
-        subtitle="Automatic sending is on, but there's no synced template to send yet. Go to Settings → Follow-up reminders, sync your WhatsApp CRM templates, and set one as default."
+        title="Automatic sending isn't fully set up"
+        subtitle="Automatic sending is on, but the WhatsApp CRM connection and/or the approved template name aren't set yet. Go to Settings → Follow-up reminders to finish setting it up."
         action={
           <button className="btn-primary" onClick={() => navigate('/settings')}>
             Go to Settings
@@ -284,7 +278,7 @@ function DueTab({ dueClients }) {
           <Zap size={15} className="text-brass-dark shrink-0" />
           <p className="text-xs text-ink">
             Automatic sending is on — messages go out through your WhatsApp CRM using{' '}
-            <span className="font-medium">{apiTemplate.name}</span>, with no manual step.
+            <span className="font-medium">{settings.followUpTemplateName}</span>, with no manual step.
           </p>
         </div>
       )}
@@ -336,9 +330,9 @@ function DueTab({ dueClients }) {
           {memberDueCount > 0 && <span className="tabular">({memberDueCount})</span>}
         </button>
         {isApiMode ? (
-          <div className="input sm:w-64 flex items-center gap-1.5 text-ink bg-black/[0.02]" title="Change the default synced template in Settings → Follow-up reminders">
+          <div className="input sm:w-64 flex items-center gap-1.5 text-ink bg-black/[0.02]" title="Change the approved template name in Settings → Follow-up reminders">
             <Star size={13} className="text-brass fill-brass shrink-0" />
-            <span className="truncate">{apiTemplate?.name}</span>
+            <span className="truncate">{settings.followUpTemplateName}</span>
           </div>
         ) : (
           <select className="input sm:w-64" value={manualTemplateId} onChange={(e) => setManualTemplateId(e.target.value)}>
@@ -520,8 +514,6 @@ function TemplatesTab() {
   const [form, setForm] = useState(emptyTemplateForm)
   const [confirmDelete, setConfirmDelete] = useState(null)
 
-  const syncedTemplates = settings.followUpSyncedTemplates || []
-
   function openAdd() {
     setForm(emptyTemplateForm)
     setEditingId(null)
@@ -557,36 +549,11 @@ function TemplatesTab() {
         <div className="card p-4 mb-6 flex items-start gap-3 bg-brass/10 border-brass/20">
           <Zap size={16} className="text-brass-dark mt-0.5 shrink-0" />
           <p className="text-xs text-ink">
-            Automatic sending is on, so Follow-ups uses <span className="font-medium">synced WhatsApp CRM templates</span> (below),
-            not the custom templates on this tab. Custom wording only applies in Manual mode. Manage which synced template is
-            default and its variable mapping in <span className="font-medium">Settings → Follow-up reminders</span>.
+            Automatic sending is on, so Follow-ups always sends the one fixed, Meta-approved template{' '}
+            <span className="font-medium">{settings.followUpTemplateName}</span>, not the custom templates on this
+            tab. Custom wording only applies in Manual mode. Change the approved template's name or language in{' '}
+            <span className="font-medium">Settings → Follow-up reminders</span>.
           </p>
-        </div>
-      )}
-
-      {syncedTemplates.length > 0 && (
-        <div className="mb-8">
-          <p className="text-sm font-semibold text-ink mb-1">Synced WhatsApp CRM templates</p>
-          <p className="text-xs text-muted mb-3">
-            Read-only — these are approved Meta templates pulled from your WhatsApp CRM. Edit wording there, then re-sync in
-            Settings.
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {syncedTemplates.map((t) => (
-              <div key={t.id} className="card p-5 flex flex-col">
-                <div className="flex items-start justify-between mb-2">
-                  <p className="font-semibold text-ink flex items-center gap-1.5">
-                    {t.name}
-                    {settings.followUpApiTemplateId === t.id && <Star size={13} className="text-brass fill-brass" />}
-                  </p>
-                  <Badge tone="muted">{t.language}</Badge>
-                </div>
-                <p className="text-sm text-muted whitespace-pre-wrap flex-1 font-mono text-xs bg-sand/50 rounded-lg p-2">
-                  {t.body_text}
-                </p>
-              </div>
-            ))}
-          </div>
         </div>
       )}
 

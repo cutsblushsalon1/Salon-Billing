@@ -176,8 +176,8 @@ export default function NewBill() {
     [selectedClient, activeMembership, activeMembershipPlan, billDateObj],
   )
   const freeServiceInfo = useMemo(
-    () => getMembershipFreeServiceInfo(activeMembership, activeMembershipPlan, billDateObj, selectedClient?.gender),
-    [activeMembership, activeMembershipPlan, billDateObj, selectedClient?.gender],
+    () => getMembershipFreeServiceInfo(activeMembership, activeMembershipPlan, billDateObj),
+    [activeMembership, activeMembershipPlan, billDateObj],
   )
 
   // How many free-service credits the current cart is already claiming
