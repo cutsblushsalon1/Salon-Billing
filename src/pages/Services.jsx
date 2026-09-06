@@ -1,36 +1,77 @@
-import React, { useMemo, useState } from 'react'
-import { Search, Plus, Pencil, Trash2, Scissors, Clock, Download, Sparkles } from 'lucide-react'
-import { useApp } from '../context/AppContext.jsx'
-import { PageHeader, Modal, EmptyState, Badge } from '../components/ui.jsx'
-import { formatCurrency, uid, capitalizeWordsPreserveSpaces } from '../utils/helpers.js'
-import { downloadCatalogExcel } from '../utils/excel.js'
+import React, { useMemo, useState } from "react";
+import {
+  Search,
+  Plus,
+  Pencil,
+  Trash2,
+  Scissors,
+  Clock,
+  Download,
+  Sparkles,
+  Eye,
+} from "lucide-react";
+import { useApp } from "../context/AppContext.jsx";
+import { PageHeader, Modal, EmptyState, Badge } from "../components/ui.jsx";
+import {
+  formatCurrency,
+  uid,
+  capitalizeWordsPreserveSpaces,
+} from "../utils/helpers.js";
+import { downloadCatalogExcel } from "../utils/excel.js";
 
-const emptyForm = { name: '', category: '', gender: 'Unisex', price: '', duration: '', isCombo: false, comboServiceIds: [] }
-const CATEGORY_TONES = { Hair: 'plum', Colour: 'brass', Treatment: 'success', Skin: 'muted', Nails: 'plum', Wellness: 'success', Makeup: 'brass' }
+const emptyForm = {
+  name: "",
+  category: "",
+  gender: "Unisex",
+  price: "",
+  duration: "",
+  isCombo: false,
+  comboServiceIds: [],
+};
+const CATEGORY_TONES = {
+  Hair: "plum",
+  Colour: "brass",
+  Treatment: "success",
+  Skin: "muted",
+  Nails: "plum",
+  Wellness: "success",
+  Makeup: "brass",
+};
 
 export default function Services() {
-  const { services, products, settings, upsertService, deleteService } = useApp()
-  const [query, setQuery] = useState('')
-  const [comboQuery, setComboQuery] = useState('')
-  const [modalOpen, setModalOpen] = useState(false)
-  const [editingId, setEditingId] = useState(null)
-  const [form, setForm] = useState(emptyForm)
-  const [confirmDelete, setConfirmDelete] = useState(null)
+  const { services, products, settings, upsertService, deleteService } =
+    useApp();
+  const [query, setQuery] = useState("");
+  const [comboQuery, setComboQuery] = useState("");
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState(emptyForm);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [viewCombo, setViewCombo] = useState(null);
 
   const filtered = useMemo(() => {
-    const q = query.toLowerCase()
-    return services.filter((s) => s.name.toLowerCase().includes(q) || s.category.toLowerCase().includes(q))
-  }, [services, query])
+    const q = query.toLowerCase();
+    return services.filter(
+      (s) =>
+        s.name.toLowerCase().includes(q) ||
+        s.category.toLowerCase().includes(q),
+    );
+  }, [services, query]);
 
   function handleExport() {
-    downloadCatalogExcel({ services, products, currencySymbol: settings.currencySymbol, label: 'services-and-products' })
+    downloadCatalogExcel({
+      services,
+      products,
+      currencySymbol: settings.currencySymbol,
+      label: "services-and-products",
+    });
   }
 
   function openAdd() {
-    setForm(emptyForm)
-    setComboQuery('')
-    setEditingId(null)
-    setModalOpen(true)
+    setForm(emptyForm);
+    setComboQuery("");
+    setEditingId(null);
+    setModalOpen(true);
   }
 
   function openEdit(s) {
@@ -42,32 +83,37 @@ export default function Services() {
       duration: s.duration,
       isCombo: !!s.isCombo,
       comboServiceIds: s.comboServiceIds || [],
-    })
-    setEditingId(s.id)
-    setComboQuery('')
-    setModalOpen(true)
+    });
+    setEditingId(s.id);
+    setComboQuery("");
+    setModalOpen(true);
   }
 
   function toggleComboService(id) {
     setForm((s) => {
-      const has = s.comboServiceIds.includes(id)
-      return { ...s, comboServiceIds: has ? s.comboServiceIds.filter((x) => x !== id) : [...s.comboServiceIds, id] }
-    })
+      const has = s.comboServiceIds.includes(id);
+      return {
+        ...s,
+        comboServiceIds: has
+          ? s.comboServiceIds.filter((x) => x !== id)
+          : [...s.comboServiceIds, id],
+      };
+    });
   }
 
   function handleSave() {
-    if (!form.name.trim() || !form.price) return
+    if (!form.name.trim() || !form.price) return;
     upsertService({
-      id: editingId || uid('svc'),
+      id: editingId || uid("svc"),
       name: capitalizeWordsPreserveSpaces(form.name),
-      category: capitalizeWordsPreserveSpaces(form.category || 'General'),
+      category: capitalizeWordsPreserveSpaces(form.category || "General"),
       gender: form.gender,
       price: Number(form.price),
       duration: Number(form.duration) || 0,
       isCombo: form.isCombo,
       comboServiceIds: form.isCombo ? form.comboServiceIds : [],
-    })
-    setModalOpen(false)
+    });
+    setModalOpen(false);
   }
 
   return (
@@ -75,7 +121,7 @@ export default function Services() {
       <PageHeader
         eyebrow="Menu"
         title="Services"
-        subtitle={`${services.length} service${services.length === 1 ? '' : 's'} in your menu`}
+        subtitle={`${services.length} service${services.length === 1 ? "" : "s"} in your menu`}
         actions={
           <div className="flex items-center gap-2">
             <button className="btn-ghost" onClick={handleExport}>
@@ -89,12 +135,24 @@ export default function Services() {
       />
 
       <div className="relative mb-6 max-w-md">
-        <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
-        <input className="input pl-10" placeholder="Search services or category…" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <Search
+          size={16}
+          className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted"
+        />
+        <input
+          className="input pl-10"
+          placeholder="Search services or category…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
       </div>
 
       {filtered.length === 0 ? (
-        <EmptyState icon={Scissors} title="No services found" subtitle="Add services to build your billing menu." />
+        <EmptyState
+          icon={Scissors}
+          title="No services found"
+          subtitle="Add services to build your billing menu."
+        />
       ) : (
         <div className="card overflow-hidden">
           <div className="overflow-x-auto">
@@ -102,11 +160,17 @@ export default function Services() {
               <thead className="bg-black/[0.02] text-xs uppercase tracking-wide text-muted">
                 <tr>
                   <th className="text-left px-5 py-3 font-semibold">Service</th>
-                  <th className="text-left px-5 py-3 font-semibold">Category</th>
+                  <th className="text-left px-5 py-3 font-semibold">
+                    Category
+                  </th>
                   <th className="text-left px-5 py-3 font-semibold">For</th>
-                  <th className="text-left px-5 py-3 font-semibold">Duration</th>
+                  <th className="text-left px-5 py-3 font-semibold">
+                    Duration
+                  </th>
                   <th className="text-right px-5 py-3 font-semibold">Price</th>
-                  <th className="text-right px-5 py-3 font-semibold">Actions</th>
+                  <th className="text-right px-5 py-3 font-semibold">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-black/5">
@@ -115,15 +179,13 @@ export default function Services() {
                     <td className="px-5 py-3.5 font-medium text-ink">
                       <span className="flex items-center gap-1.5">
                         {s.name}
-                        {s.isCombo && (
-                          <Badge tone="brass">
-                            <Sparkles size={10} className="inline -mt-0.5 mr-0.5" /> Combo
-                          </Badge>
-                        )}
+                        {s.isCombo && <Badge tone="brass">Combo</Badge>}
                       </span>
                     </td>
                     <td className="px-5 py-3.5">
-                      <Badge tone={CATEGORY_TONES[s.category] || 'muted'}>{s.category}</Badge>
+                      <Badge tone={CATEGORY_TONES[s.category] || "muted"}>
+                        {s.category}
+                      </Badge>
                     </td>
                     <td className="px-5 py-3.5 text-muted">{s.gender}</td>
                     <td className="px-5 py-3.5 text-muted">
@@ -136,10 +198,25 @@ export default function Services() {
                     </td>
                     <td className="px-5 py-3.5">
                       <div className="flex items-center justify-end gap-1">
-                        <button onClick={() => openEdit(s)} className="p-1.5 text-muted hover:text-plum">
+                        {s.isCombo && (
+                          <button
+                            onClick={() => setViewCombo(s)}
+                            className="p-1.5 text-muted hover:text-plum"
+                            title="View included services"
+                          >
+                            <Eye size={15} />
+                          </button>
+                        )}
+                        <button
+                          onClick={() => openEdit(s)}
+                          className="p-1.5 text-muted hover:text-plum"
+                        >
                           <Pencil size={15} />
                         </button>
-                        <button onClick={() => setConfirmDelete(s)} className="p-1.5 text-muted hover:text-danger">
+                        <button
+                          onClick={() => setConfirmDelete(s)}
+                          className="p-1.5 text-muted hover:text-danger"
+                        >
                           <Trash2 size={15} />
                         </button>
                       </div>
@@ -152,11 +229,20 @@ export default function Services() {
         </div>
       )}
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editingId ? 'Edit service' : 'Add service'}>
+      <Modal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title={editingId ? "Edit service" : "Add service"}
+      >
         <div className="space-y-3">
           <div>
             <label className="label">Service name</label>
-            <input className="input" value={form.name} onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))} autoFocus />
+            <input
+              className="input"
+              value={form.name}
+              onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))}
+              autoFocus
+            />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -165,12 +251,20 @@ export default function Services() {
                 className="input"
                 placeholder="Hair, Skin, Nails…"
                 value={form.category}
-                onChange={(e) => setForm((s) => ({ ...s, category: e.target.value }))}
+                onChange={(e) =>
+                  setForm((s) => ({ ...s, category: e.target.value }))
+                }
               />
             </div>
             <div>
               <label className="label">For</label>
-              <select className="input" value={form.gender} onChange={(e) => setForm((s) => ({ ...s, gender: e.target.value }))}>
+              <select
+                className="input"
+                value={form.gender}
+                onChange={(e) =>
+                  setForm((s) => ({ ...s, gender: e.target.value }))
+                }
+              >
                 <option>Unisex</option>
                 <option>Female</option>
                 <option>Male</option>
@@ -185,7 +279,9 @@ export default function Services() {
                 type="number"
                 min="0"
                 value={form.price}
-                onChange={(e) => setForm((s) => ({ ...s, price: e.target.value }))}
+                onChange={(e) =>
+                  setForm((s) => ({ ...s, price: e.target.value }))
+                }
               />
             </div>
             <div>
@@ -195,7 +291,9 @@ export default function Services() {
                 type="number"
                 min="0"
                 value={form.duration}
-                onChange={(e) => setForm((s) => ({ ...s, duration: e.target.value }))}
+                onChange={(e) =>
+                  setForm((s) => ({ ...s, duration: e.target.value }))
+                }
               />
             </div>
           </div>
@@ -204,7 +302,9 @@ export default function Services() {
               <input
                 type="checkbox"
                 checked={form.isCombo}
-                onChange={(e) => setForm((s) => ({ ...s, isCombo: e.target.checked }))}
+                onChange={(e) =>
+                  setForm((s) => ({ ...s, isCombo: e.target.checked }))
+                }
                 className="w-4 h-4 accent-plum"
               />
               This is a combo offer (bundles other services at one price)
@@ -213,7 +313,10 @@ export default function Services() {
               <div className="mt-3">
                 <label className="label">Included services</label>
                 <div className="relative mb-2">
-                  <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                  <Search
+                    size={15}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-muted"
+                  />
                   <input
                     className="input pl-9"
                     placeholder="Search services to include…"
@@ -225,11 +328,18 @@ export default function Services() {
                   {services
                     .filter((s) => s.id !== editingId && !s.isCombo)
                     .filter((s) => {
-                      const q = comboQuery.trim().toLowerCase()
-                      return !q || s.name.toLowerCase().includes(q) || s.category.toLowerCase().includes(q)
+                      const q = comboQuery.trim().toLowerCase();
+                      return (
+                        !q ||
+                        s.name.toLowerCase().includes(q) ||
+                        s.category.toLowerCase().includes(q)
+                      );
                     })
                     .map((s) => (
-                      <label key={s.id} className="flex items-center gap-2 text-sm text-ink px-1.5 py-1 rounded hover:bg-black/[0.03] cursor-pointer">
+                      <label
+                        key={s.id}
+                        className="flex items-center gap-2 text-sm text-ink px-1.5 py-1 rounded hover:bg-black/[0.03] cursor-pointer"
+                      >
                         <input
                           type="checkbox"
                           checked={form.comboServiceIds.includes(s.id)}
@@ -237,25 +347,38 @@ export default function Services() {
                           className="w-4 h-4 accent-plum"
                         />
                         {s.name}
-                        <span className="text-muted text-xs ml-auto">{formatCurrency(s.price, settings.currencySymbol)}</span>
+                        <span className="text-muted text-xs ml-auto">
+                          {formatCurrency(s.price, settings.currencySymbol)}
+                        </span>
                       </label>
                     ))}
-                  {services.filter((s) => s.id !== editingId && !s.isCombo).length === 0 && (
-                    <p className="text-xs text-muted px-1.5 py-1">Add some individual services first.</p>
+                  {services.filter((s) => s.id !== editingId && !s.isCombo)
+                    .length === 0 && (
+                    <p className="text-xs text-muted px-1.5 py-1">
+                      Add some individual services first.
+                    </p>
                   )}
-                  {services.filter((s) => s.id !== editingId && !s.isCombo).length > 0 &&
+                  {services.filter((s) => s.id !== editingId && !s.isCombo)
+                    .length > 0 &&
                     services
                       .filter((s) => s.id !== editingId && !s.isCombo)
                       .filter((s) => {
-                        const q = comboQuery.trim().toLowerCase()
-                        return !q || s.name.toLowerCase().includes(q) || s.category.toLowerCase().includes(q)
+                        const q = comboQuery.trim().toLowerCase();
+                        return (
+                          !q ||
+                          s.name.toLowerCase().includes(q) ||
+                          s.category.toLowerCase().includes(q)
+                        );
                       }).length === 0 && (
-                      <p className="text-xs text-muted px-1.5 py-1">No matching services found.</p>
+                      <p className="text-xs text-muted px-1.5 py-1">
+                        No matching services found.
+                      </p>
                     )}
                 </div>
                 <p className="text-xs text-muted mt-1.5">
-                  Set the combo's own bundle price above — it's billed as one line item, showing the included
-                  services underneath on the invoice.
+                  Set the combo's own bundle price above — it's billed as one
+                  line item, showing the included services underneath on the
+                  invoice.
                 </p>
               </div>
             )}
@@ -264,27 +387,92 @@ export default function Services() {
             <button onClick={() => setModalOpen(false)} className="btn-ghost">
               Cancel
             </button>
-            <button onClick={handleSave} className="btn-primary" disabled={!form.name.trim() || !form.price}>
+            <button
+              onClick={handleSave}
+              className="btn-primary"
+              disabled={!form.name.trim() || !form.price}
+            >
               Save service
             </button>
           </div>
         </div>
       </Modal>
 
-      <Modal open={!!confirmDelete} onClose={() => setConfirmDelete(null)} title="Remove service?" size="sm">
+      <Modal
+        open={!!viewCombo}
+        onClose={() => setViewCombo(null)}
+        title={
+          viewCombo
+            ? `${viewCombo.name} — Included services`
+            : "Included services"
+        }
+        size="sm"
+      >
+        {viewCombo && (
+          <div>
+            {(() => {
+              const included = (viewCombo.comboServiceIds || [])
+                .map((id) => services.find((service) => service.id === id))
+                .filter(Boolean);
+              return included.length > 0 ? (
+                <div className="space-y-2">
+                  {included.map((service) => (
+                    <div
+                      key={service.id}
+                      className="flex items-center justify-between rounded-lg border border-black/5 bg-black/[0.02] px-3 py-2.5"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-ink">
+                          {service.name}
+                        </p>
+                        {service.category && (
+                          <p className="text-xs text-muted mt-0.5">
+                            {service.category}
+                          </p>
+                        )}
+                      </div>
+                      <span className="text-sm font-semibold text-ink">
+                        {formatCurrency(service.price, settings.currencySymbol)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted">
+                  No individual services are currently included in this combo.
+                </p>
+              );
+            })()}
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={!!confirmDelete}
+        onClose={() => setConfirmDelete(null)}
+        title="Remove service?"
+        size="sm"
+      >
         {confirmDelete && (
           <div>
             <p className="text-sm text-muted mb-5">
-              Remove <span className="font-semibold text-ink">{confirmDelete.name}</span> from your service menu?
+              Remove{" "}
+              <span className="font-semibold text-ink">
+                {confirmDelete.name}
+              </span>{" "}
+              from your service menu?
             </p>
             <div className="flex items-center gap-2 justify-end">
-              <button onClick={() => setConfirmDelete(null)} className="btn-ghost">
+              <button
+                onClick={() => setConfirmDelete(null)}
+                className="btn-ghost"
+              >
                 Cancel
               </button>
               <button
                 onClick={() => {
-                  deleteService(confirmDelete.id)
-                  setConfirmDelete(null)
+                  deleteService(confirmDelete.id);
+                  setConfirmDelete(null);
                 }}
                 className="btn-danger"
               >
@@ -295,5 +483,5 @@ export default function Services() {
         )}
       </Modal>
     </div>
-  )
+  );
 }

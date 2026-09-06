@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import {
   BarChart3,
   CalendarRange,
@@ -11,6 +11,7 @@ import {
   TrendingUp,
   Wallet,
   X,
+  Settings2,
 } from 'lucide-react'
 import {
   BarChart,
@@ -73,7 +74,7 @@ function previousRange(startDate, endDate) {
 }
 
 export default function Finance() {
-  const { bills, expenses, addExpense, updateExpense, deleteExpense, settings } = useApp()
+  const { bills, expenses, addExpense, updateExpense, deleteExpense, settings, updateSettings } = useApp()
   const currency = settings.currencySymbol || '₹'
 
   const [startDate, setStartDate] = useState('')
@@ -89,6 +90,47 @@ export default function Finance() {
     paymentMethod: 'UPI',
     notes: '',
   })
+
+  // Automatic expense settings are edited locally and only committed when
+  // the user explicitly clicks Save. This prevents partially-entered rent
+  // amounts/dates (or an untimely checkbox change) from creating expenses.
+  const [autoExpenseDraft, setAutoExpenseDraft] = useState(() => ({
+    salaryEnabled: settings.autoSalaryExpensesEnabled !== false,
+    salaryDay: settings.autoSalaryExpenseDay ?? 1,
+    rentEnabled: !!settings.autoRentExpenseEnabled,
+    rentAmount: settings.autoRentAmount ?? 0,
+    rentDay: settings.autoRentExpenseDay ?? 1,
+  }))
+
+  useEffect(() => {
+    if (!settings.autoExpensesSavedAt) return
+    setAutoExpenseDraft({
+      salaryEnabled: settings.autoSalaryExpensesEnabled !== false,
+      salaryDay: settings.autoSalaryExpenseDay ?? 1,
+      rentEnabled: !!settings.autoRentExpenseEnabled,
+      rentAmount: settings.autoRentAmount ?? 0,
+      rentDay: settings.autoRentExpenseDay ?? 1,
+    })
+  }, [settings.autoExpensesSavedAt])
+
+  const saveAutomaticExpenseSettings = () => {
+    const salaryDay = Math.min(31, Math.max(1, Number(autoExpenseDraft.salaryDay) || 1))
+    const rentDay = Math.min(31, Math.max(1, Number(autoExpenseDraft.rentDay) || 1))
+    const rentAmount = Number(autoExpenseDraft.rentAmount) || 0
+
+    if (autoExpenseDraft.rentEnabled && rentAmount <= 0) {
+      return
+    }
+
+    updateSettings({
+      autoSalaryExpensesEnabled: !!autoExpenseDraft.salaryEnabled,
+      autoSalaryExpenseDay: salaryDay,
+      autoRentExpenseEnabled: !!autoExpenseDraft.rentEnabled,
+      autoRentAmount: rentAmount,
+      autoRentExpenseDay: rentDay,
+      autoExpensesSavedAt: new Date().toISOString(),
+    })
+  }
 
   const scopedBills = useMemo(
     () => (startDate || endDate ? bills.filter((b) => isInRange(b.date, startDate, endDate)) : bills),
@@ -219,6 +261,50 @@ export default function Finance() {
           </button>
         }
       />
+
+      <div className="card p-4 sm:p-5 mb-6">
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <div>
+            <p className="font-display text-lg text-ink flex items-center gap-2"><Settings2 size={17} /> Automatic monthly expenses</p>
+            <p className="text-xs text-muted mt-1">Salary expenses are created automatically for active staff. Rent can also be added every month on your chosen date.</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="rounded-xl border border-black/5 p-4">
+            <label className="flex items-center gap-2 text-sm font-medium text-ink">
+              <input type="checkbox" checked={autoExpenseDraft.salaryEnabled} onChange={(e) => setAutoExpenseDraft((d) => ({ ...d, salaryEnabled: e.target.checked }))} />
+              Automatic staff salaries
+            </label>
+            <div className="mt-3">
+              <label className="label">Salary expense date each month</label>
+              <input className="input" type="number" min="1" max="31" value={autoExpenseDraft.salaryDay} onChange={(e) => setAutoExpenseDraft((d) => ({ ...d, salaryDay: e.target.value }))} />
+            </div>
+            <p className="text-[11px] text-muted mt-2">Uses each active staff member's monthly salary. If the app is opened after the selected date, the month's expense is still created automatically.</p>
+          </div>
+          <div className="rounded-xl border border-black/5 p-4">
+            <label className="flex items-center gap-2 text-sm font-medium text-ink">
+              <input type="checkbox" checked={autoExpenseDraft.rentEnabled} onChange={(e) => setAutoExpenseDraft((d) => ({ ...d, rentEnabled: e.target.checked }))} />
+              Automatic monthly rent
+            </label>
+            <div className="grid grid-cols-2 gap-3 mt-3">
+              <div>
+                <label className="label">Rent amount</label>
+                <input className="input" type="number" min="0" step="0.01" value={autoExpenseDraft.rentAmount} onChange={(e) => setAutoExpenseDraft((d) => ({ ...d, rentAmount: e.target.value }))} />
+              </div>
+              <div>
+                <label className="label">Date each month</label>
+                <input className="input" type="number" min="1" max="31" value={autoExpenseDraft.rentDay} onChange={(e) => setAutoExpenseDraft((d) => ({ ...d, rentDay: e.target.value }))} />
+              </div>
+            </div>
+            <p className="text-[11px] text-muted mt-2">The rent is recorded under Rent automatically each month from the selected date.</p>
+          </div>
+        </div>
+        <div className="mt-4 flex justify-end">
+          <button type="button" className="btn-primary" onClick={saveAutomaticExpenseSettings}>
+            Save automatic expense settings
+          </button>
+        </div>
+      </div>
 
       <div className="card p-4 sm:p-5 mb-6 flex flex-col lg:flex-row lg:items-center gap-3">
         <div className="flex items-center gap-2 flex-1">
