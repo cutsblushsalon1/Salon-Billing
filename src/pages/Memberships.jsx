@@ -21,7 +21,7 @@ import {
   getPlanFreeServiceIds,
   getPlanFreeServiceCount,
   matchesCatalogQuery,
-  uid,,
+  uid,
   capitalizeWords
 } from '../utils/helpers.js'
 

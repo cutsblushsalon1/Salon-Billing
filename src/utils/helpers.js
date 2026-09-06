@@ -3,11 +3,18 @@
 // "Suraj Kumar". Existing internal capitalization is normalised as well so
 // names never end up all-lowercase or all-uppercase in the app.
 export function capitalizeWords(value) {
-  return String(value ?? '')
+  const raw = String(value ?? '')
+  const hasTrailingSpace = /\s$/.test(raw)
+  const normalized = raw
     .trim()
     .replace(/\s+/g, ' ')
     .toLowerCase()
     .replace(/(^|[\s'-])([a-z])/g, (_, prefix, letter) => `${prefix}${letter.toUpperCase()}`)
+
+  // Preserve a space at the end while the user is typing. Without this,
+  // entering `Suraj Kumar` would become `Surajkumar` because the formatter
+  // runs after every keystroke and trims the just-entered space.
+  return hasTrailingSpace ? `${normalized} ` : normalized
 }
 
 export function uid(prefix = 'id') {

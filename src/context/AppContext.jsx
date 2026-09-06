@@ -111,7 +111,7 @@ export function AppProvider({ children }) {
     setClients((prev) =>
       prev.map((client) => ({
         ...client,
-        name: capitalizeWords(client.name),
+        name: capitalizeWords(client.name).trim(),
         visits: (client.visits || []).map((visit) => ({
           ...visit,
           items: (visit.items || []).map((name) => capitalizeWords(name)),
@@ -119,18 +119,18 @@ export function AppProvider({ children }) {
       })),
     )
 
-    setServices((prev) => prev.map((service) => ({ ...service, name: capitalizeWords(service.name) })))
+    setServices((prev) => prev.map((service) => ({ ...service, name: capitalizeWords(service.name).trim() })))
 
     setBills((prev) =>
       prev.map((bill) => ({
         ...bill,
-        client: bill.client ? { ...bill.client, name: capitalizeWords(bill.client.name) } : bill.client,
-        items: (bill.items || []).map((item) => ({ ...item, name: capitalizeWords(item.name) })),
+        client: bill.client ? { ...bill.client, name: capitalizeWords(bill.client.name).trim() } : bill.client,
+        items: (bill.items || []).map((item) => ({ ...item, name: capitalizeWords(item.name).trim() })),
       })),
     )
 
     setClientMemberships((prev) =>
-      prev.map((membership) => ({ ...membership, clientName: capitalizeWords(membership.clientName) })),
+      prev.map((membership) => ({ ...membership, clientName: capitalizeWords(membership.clientName).trim() })),
     )
   }, [hydrated])
 
@@ -174,7 +174,7 @@ export function AppProvider({ children }) {
     }
     let cancelled = false
     fetchAppointments().then((rows) => {
-      if (!cancelled) setAppointments(rows.map((row) => ({ ...row, client_name: capitalizeWords(row.client_name), service_name: capitalizeWords(row.service_name) })))
+      if (!cancelled) setAppointments(rows.map((row) => ({ ...row, client_name: capitalizeWords(row.client_name).trim(), service_name: capitalizeWords(row.service_name).trim() })))
     })
     // Ask for browser notification permission once, up front, so the
     // permission prompt isn't tied to (and blocked by) the realtime event
@@ -185,7 +185,7 @@ export function AppProvider({ children }) {
         notifyNewAppointment(payload.new)
       }
       fetchAppointments().then((rows) => {
-        if (!cancelled) setAppointments(rows.map((row) => ({ ...row, client_name: capitalizeWords(row.client_name), service_name: capitalizeWords(row.service_name) })))
+        if (!cancelled) setAppointments(rows.map((row) => ({ ...row, client_name: capitalizeWords(row.client_name).trim(), service_name: capitalizeWords(row.service_name).trim() })))
       })
     })
     return () => {
@@ -312,7 +312,7 @@ export function AppProvider({ children }) {
 
   // ---- Clients ----
   const upsertClient = useCallback((client) => {
-    const normalized = { ...client, name: capitalizeWords(client.name) }
+    const normalized = { ...client, name: capitalizeWords(client.name).trim() }
     setClients((prev) => {
       const exists = prev.find((c) => c.id === normalized.id)
       if (exists) return prev.map((c) => (c.id === normalized.id ? { ...c, ...normalized } : c))
@@ -328,7 +328,7 @@ export function AppProvider({ children }) {
 
   // ---- Services ----
   const upsertService = useCallback((service) => {
-    const normalized = { ...service, name: capitalizeWords(service.name) }
+    const normalized = { ...service, name: capitalizeWords(service.name).trim() }
     setServices((prev) => {
       const exists = prev.find((s) => s.id === normalized.id)
       if (exists) return prev.map((s) => (s.id === normalized.id ? { ...s, ...normalized } : s))

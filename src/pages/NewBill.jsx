@@ -543,7 +543,7 @@ export default function NewBill() {
                             {c.name}
                             {c.isCombo && (
                               <Badge tone="brass">
-                                <Sparkles size={10} className="inline -mt-0.5 mr-0.5" /> Combo
+                                Combo Offer
                               </Badge>
                             )}
                           </p>
