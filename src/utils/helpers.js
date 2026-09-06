@@ -1,3 +1,15 @@
+
+// Formats person/service names in consistent title case: "suraj kumar" ->
+// "Suraj Kumar". Existing internal capitalization is normalised as well so
+// names never end up all-lowercase or all-uppercase in the app.
+export function capitalizeWords(value) {
+  return String(value ?? '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase()
+    .replace(/(^|[\s'-])([a-z])/g, (_, prefix, letter) => `${prefix}${letter.toUpperCase()}`)
+}
+
 export function uid(prefix = 'id') {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
 }
@@ -176,7 +188,7 @@ export function getClientLastService(client) {
   const visits = client.visits || []
   if (visits.length === 0) return ''
   const last = visits[visits.length - 1]
-  return (last.items && last.items[0]) || ''
+  return capitalizeWords((last.items && last.items[0]) || '')
 }
 
 // The fixed set of client-context values available to plug into a
@@ -194,7 +206,7 @@ export const FOLLOWUP_TOKENS = [
 
 export function buildFollowUpTokenValues(client, settings) {
   return {
-    clientName: client.name,
+    clientName: capitalizeWords(client.name),
     salonName: settings.salonName,
     lastVisitDate: client.lastVisit ? formatDate(client.lastVisit) : '',
     daysSinceVisit: client.lastVisit ? String(daysSince(client.lastVisit)) : '',

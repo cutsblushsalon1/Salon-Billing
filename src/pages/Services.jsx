@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react'
 import { Search, Plus, Pencil, Trash2, Scissors, Clock, Download, Sparkles } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, Modal, EmptyState, Badge } from '../components/ui.jsx'
-import { formatCurrency, uid } from '../utils/helpers.js'
+import { formatCurrency, uid, capitalizeWords } from '../utils/helpers.js'
 import { downloadCatalogExcel } from '../utils/excel.js'
 
 const emptyForm = { name: '', category: '', gender: 'Unisex', price: '', duration: '', isCombo: false, comboServiceIds: [] }

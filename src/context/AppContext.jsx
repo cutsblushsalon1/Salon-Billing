@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import { seedServices, seedProducts, seedStaff, seedTemplates, seedMembershipPlans, defaultSettings } from '../data/seed.js'
-import { uid, buildInvoiceNumber } from '../utils/helpers.js'
+import { uid, buildInvoiceNumber, capitalizeWords } from '../utils/helpers.js'
 import { pushInvoiceToSupabase } from '../utils/invoiceSync.js'
 import { fetchAppState, fetchAppStateKey, saveAppState } from '../lib/appStateSync.js'
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient.js'
@@ -103,6 +103,38 @@ export function AppProvider({ children }) {
   // whatever's already saved remotely before the pull has a chance to land.
   const [hydrated, setHydrated] = useState(false)
 
+  // Normalise legacy/local/remote data once so older records also follow the
+  // same name convention, not just newly-created clients and services.
+  useEffect(() => {
+    if (!hydrated) return
+
+    setClients((prev) =>
+      prev.map((client) => ({
+        ...client,
+        name: capitalizeWords(client.name),
+        visits: (client.visits || []).map((visit) => ({
+          ...visit,
+          items: (visit.items || []).map((name) => capitalizeWords(name)),
+        })),
+      })),
+    )
+
+    setServices((prev) => prev.map((service) => ({ ...service, name: capitalizeWords(service.name) })))
+
+    setBills((prev) =>
+      prev.map((bill) => ({
+        ...bill,
+        client: bill.client ? { ...bill.client, name: capitalizeWords(bill.client.name) } : bill.client,
+        items: (bill.items || []).map((item) => ({ ...item, name: capitalizeWords(item.name) })),
+      })),
+    )
+
+    setClientMemberships((prev) =>
+      prev.map((membership) => ({ ...membership, clientName: capitalizeWords(membership.clientName) })),
+    )
+  }, [hydrated])
+
+
   // One-time pull on mount: whatever's in Supabase wins over localStorage/
   // seed data, since Supabase is the shared source of truth across devices.
   // If Supabase isn't configured (no env vars) or the request fails, this
@@ -142,7 +174,7 @@ export function AppProvider({ children }) {
     }
     let cancelled = false
     fetchAppointments().then((rows) => {
-      if (!cancelled) setAppointments(rows)
+      if (!cancelled) setAppointments(rows.map((row) => ({ ...row, client_name: capitalizeWords(row.client_name), service_name: capitalizeWords(row.service_name) })))
     })
     // Ask for browser notification permission once, up front, so the
     // permission prompt isn't tied to (and blocked by) the realtime event
@@ -153,7 +185,7 @@ export function AppProvider({ children }) {
         notifyNewAppointment(payload.new)
       }
       fetchAppointments().then((rows) => {
-        if (!cancelled) setAppointments(rows)
+        if (!cancelled) setAppointments(rows.map((row) => ({ ...row, client_name: capitalizeWords(row.client_name), service_name: capitalizeWords(row.service_name) })))
       })
     })
     return () => {
@@ -280,10 +312,11 @@ export function AppProvider({ children }) {
 
   // ---- Clients ----
   const upsertClient = useCallback((client) => {
+    const normalized = { ...client, name: capitalizeWords(client.name) }
     setClients((prev) => {
-      const exists = prev.find((c) => c.id === client.id)
-      if (exists) return prev.map((c) => (c.id === client.id ? { ...c, ...client } : c))
-      return [...prev, { visits: [], totalSpent: 0, createdAt: new Date().toISOString(), ...client }]
+      const exists = prev.find((c) => c.id === normalized.id)
+      if (exists) return prev.map((c) => (c.id === normalized.id ? { ...c, ...normalized } : c))
+      return [...prev, { visits: [], totalSpent: 0, createdAt: new Date().toISOString(), ...normalized }]
     })
   }, [])
 
@@ -295,10 +328,11 @@ export function AppProvider({ children }) {
 
   // ---- Services ----
   const upsertService = useCallback((service) => {
+    const normalized = { ...service, name: capitalizeWords(service.name) }
     setServices((prev) => {
-      const exists = prev.find((s) => s.id === service.id)
-      if (exists) return prev.map((s) => (s.id === service.id ? { ...s, ...service } : s))
-      return [...prev, { id: uid('svc'), ...service }]
+      const exists = prev.find((s) => s.id === normalized.id)
+      if (exists) return prev.map((s) => (s.id === normalized.id ? { ...s, ...normalized } : s))
+      return [...prev, { id: uid('svc'), ...normalized }]
     })
   }, [])
 

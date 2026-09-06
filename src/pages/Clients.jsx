@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { useApp } from "../context/AppContext.jsx";
 import { PageHeader, Modal, EmptyState, Badge } from "../components/ui.jsx";
-import { formatCurrency, formatDate, uid } from "../utils/helpers.js";
+import { formatCurrency, formatDate, uid, capitalizeWords } from "../utils/helpers.js";
 import { downloadClientsExcel } from "../utils/excel.js";
 
 // Accepts common header spellings from exported spreadsheets, case-insensitive
@@ -317,7 +317,7 @@ export default function Clients() {
             <input
               className="input"
               value={form.name}
-              onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))}
+              onChange={(e) => setForm((s) => ({ ...s, name: capitalizeWords(e.target.value) }))}
               autoFocus
             />
           </div>

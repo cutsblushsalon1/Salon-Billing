@@ -21,7 +21,8 @@ import {
   getPlanFreeServiceIds,
   getPlanFreeServiceCount,
   matchesCatalogQuery,
-  uid,
+  uid,,
+  capitalizeWords
 } from '../utils/helpers.js'
 
 const TABS = [
@@ -738,7 +739,7 @@ export default function Memberships() {
               <input
                 className="input"
                 value={enrollForm.name}
-                onChange={(e) => setEnrollForm((s) => ({ ...s, name: e.target.value }))}
+                onChange={(e) => setEnrollForm((s) => ({ ...s, name: capitalizeWords(e.target.value) }))}
               />
             </div>
             <div>

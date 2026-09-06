@@ -33,6 +33,7 @@ import {
   getComboServiceNames,
   matchesCatalogQuery,
   uid,
+  capitalizeWords,
 } from '../utils/helpers.js'
 import { downloadBillPDF } from '../utils/pdf.js'
 
@@ -358,7 +359,7 @@ export default function NewBill() {
                     className="input"
                     placeholder="Full name"
                     value={newClient.name}
-                    onChange={(e) => setNewClient((s) => ({ ...s, name: e.target.value }))}
+                    onChange={(e) => setNewClient((s) => ({ ...s, name: capitalizeWords(e.target.value) }))}
                   />
                   <input
                     className="input"
@@ -477,11 +478,6 @@ export default function NewBill() {
                       <p className="text-sm font-medium text-ink truncate flex items-center gap-1.5">
                         {item.name}
                         {isFreeEligible && <Badge tone="success">Free eligible</Badge>}
-                        {catalogTab === 'service' && item.isCombo && (
-                          <Badge tone="brass">
-                            <Sparkles size={10} className="inline -mt-0.5 mr-0.5" /> Combo
-                          </Badge>
-                        )}
                       </p>
                       <p className="text-xs text-muted">
                         {formatCurrency(item.price, settings.currencySymbol)}
@@ -545,6 +541,11 @@ export default function NewBill() {
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-medium text-ink truncate flex items-center gap-1.5">
                             {c.name}
+                            {c.isCombo && (
+                              <Badge tone="brass">
+                                <Sparkles size={10} className="inline -mt-0.5 mr-0.5" /> Combo
+                              </Badge>
+                            )}
                           </p>
                           <p className="text-xs text-muted">{formatCurrency(c.price, settings.currencySymbol)} each</p>
                           {c.isCombo && c.comboItems?.length > 0 && (

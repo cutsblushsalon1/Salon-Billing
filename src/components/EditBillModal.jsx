@@ -2,7 +2,9 @@ import React, { useMemo, useState } from 'react'
 import { Search, Plus, Minus, Trash2, Scissors, Package, Save, TriangleAlert } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { Modal } from './ui.jsx'
-import { calcBillTotals, calcLineTotal, formatCurrency, matchesCatalogQuery, getComboServiceNames } from '../utils/helpers.js'
+import { calcBillTotals, calcLineTotal, formatCurrency, matchesCatalogQuery, getComboServiceNames,
+  capitalizeWords
+} from '../utils/helpers.js'
 
 const PAYMENT_METHODS = ['Cash', 'Card', 'UPI', 'Wallet']
 
@@ -128,7 +130,7 @@ export default function EditBillModal({ bill, open, onClose }) {
               <input
                 className={`input ${!clientName.trim() ? 'border-danger/40' : ''}`}
                 value={clientName}
-                onChange={(e) => setClientName(e.target.value)}
+                onChange={(e) => setClientName(capitalizeWords(e.target.value))}
                 placeholder="Walk-in Customer"
               />
             </div>
