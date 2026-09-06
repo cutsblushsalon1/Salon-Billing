@@ -16,6 +16,7 @@ import {
   ReceiptText,
   Check,
   Crown,
+  Sparkles,
 } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, Modal, Badge } from '../components/ui.jsx'
@@ -29,6 +30,7 @@ import {
   findActiveMembership,
   getMembershipDiscountInfo,
   getMembershipFreeServiceInfo,
+  getComboServiceNames,
   matchesCatalogQuery,
   uid,
 } from '../utils/helpers.js'
@@ -116,6 +118,8 @@ export default function NewBill() {
           staffId: '',
           staffName: '',
           isFreeClaim: false,
+          isCombo: !!item.isCombo,
+          comboItems: item.isCombo ? getComboServiceNames(item, services) : [],
         },
       ]
     })
@@ -473,6 +477,11 @@ export default function NewBill() {
                       <p className="text-sm font-medium text-ink truncate flex items-center gap-1.5">
                         {item.name}
                         {isFreeEligible && <Badge tone="success">Free eligible</Badge>}
+                        {catalogTab === 'service' && item.isCombo && (
+                          <Badge tone="brass">
+                            <Sparkles size={10} className="inline -mt-0.5 mr-0.5" /> Combo
+                          </Badge>
+                        )}
                       </p>
                       <p className="text-xs text-muted">
                         {formatCurrency(item.price, settings.currencySymbol)}
@@ -534,8 +543,18 @@ export default function NewBill() {
                     <div key={`${c.type}-${c.refId}`} className="pb-4 border-b border-black/5 last:border-0 last:pb-0">
                       <div className="flex items-center gap-2">
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-ink truncate">{c.name}</p>
+                          <p className="text-sm font-medium text-ink truncate flex items-center gap-1.5">
+                            {c.name}
+                            {c.isCombo && (
+                              <Badge tone="brass">
+                                <Sparkles size={10} className="inline -mt-0.5 mr-0.5" /> Combo
+                              </Badge>
+                            )}
+                          </p>
                           <p className="text-xs text-muted">{formatCurrency(c.price, settings.currencySymbol)} each</p>
+                          {c.isCombo && c.comboItems?.length > 0 && (
+                            <p className="text-[11px] text-muted mt-0.5 truncate">Includes: {c.comboItems.join(', ')}</p>
+                          )}
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0">
                           <button

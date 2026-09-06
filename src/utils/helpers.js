@@ -13,6 +13,14 @@ export function matchesCatalogQuery(item, query) {
   return item.name.toLowerCase().includes(q) || (item.category || '').toLowerCase().includes(q)
 }
 
+// Returns the display names of the individual services included in a combo service.
+// Combo services store their component service IDs in `comboServiceIds`.
+export function getComboServiceNames(item, services = []) {
+  const ids = Array.isArray(item?.comboServiceIds) ? item.comboServiceIds : []
+  const byId = new Map((services || []).map((service) => [service.id, service]))
+  return ids.map((id) => byId.get(id)?.name).filter(Boolean)
+}
+
 export function formatCurrency(amount, symbol = '\u20B9') {
   const n = Number(amount) || 0
   return `${symbol}${n.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
@@ -206,20 +214,20 @@ export function buildFollowUpMessage(template, client, settings) {
 // gets sent is the structured template name + body params
 // (buildFollowUpApiTemplateParams below), not this string.
 export const FOLLOWUP_API_TEMPLATE_TEXT =
-  "Hi {{1}}, we miss you at *{{2}}*! It's been {{3}} days since your last visit — enjoy a special *25% OFF* on your next service, just for you. Book your appointment today and treat yourself!"
+  "Hi {{1}}, it's been {{2}} days since your last visit to *Cuts & Blush Unisex Salon*! We'd love to see you again soon for {{3}}. 💖\n\nBook your next appointment through our website and get *flat 25% off on all services*!"
 
 // Builds the dynamic values for the approved follow-up WhatsApp template
 // directly from the client, the same way buildInvoiceTemplateParams does
 // for invoices — one fixed, Meta-approved template for every automatic
 // follow-up, no per-template variable mapping needed:
-//   {{1}} client's name, {{2}} salon name, {{3}} days since last visit
+//   {{1}} client's name, {{2}} days since last visit, {{3}} last service
 // The 25% offer itself is fixed copy in the approved template, not a
 // variable — Meta template variables are for personalisation, not for
 // changing the deal being offered.
 export function buildFollowUpApiTemplateParams(client, settings) {
   const tokens = buildFollowUpTokenValues(client, settings)
   return {
-    body: [tokens.clientName, tokens.salonName, tokens.daysSinceVisit],
+    body: [tokens.clientName, tokens.daysSinceVisit, tokens.lastService],
   }
 }
 

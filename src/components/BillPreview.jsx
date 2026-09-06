@@ -56,7 +56,11 @@ export function InvoiceLayout({ bill, settings }) {
                 <td className="py-2.5 pr-2">
                   <span>{it.name}</span>
                   {it.type === 'product' && <span className="text-muted text-[10px] ml-1.5">(product)</span>}
+                  {it.isCombo && <span className="text-brass-dark text-[10px] ml-1.5">(combo)</span>}
                   {it.staffName && <span className="block text-[10px] text-muted mt-0.5">by {it.staffName}</span>}
+                  {it.isCombo && it.comboItems?.length > 0 && (
+                    <span className="block text-[10px] text-muted mt-0.5">Includes: {it.comboItems.join(', ')}</span>
+                  )}
                   {line.discount > 0 && (
                     <span className="block text-[10px] text-brass-dark mt-0.5">{it.discountPercent}% off applied</span>
                   )}

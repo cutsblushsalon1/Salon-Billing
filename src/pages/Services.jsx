@@ -1,11 +1,11 @@
 import React, { useMemo, useState } from 'react'
-import { Search, Plus, Pencil, Trash2, Scissors, Clock, Download } from 'lucide-react'
+import { Search, Plus, Pencil, Trash2, Scissors, Clock, Download, Sparkles } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, Modal, EmptyState, Badge } from '../components/ui.jsx'
 import { formatCurrency, uid } from '../utils/helpers.js'
 import { downloadCatalogExcel } from '../utils/excel.js'
 
-const emptyForm = { name: '', category: '', gender: 'Unisex', price: '', duration: '' }
+const emptyForm = { name: '', category: '', gender: 'Unisex', price: '', duration: '', isCombo: false, comboServiceIds: [] }
 const CATEGORY_TONES = { Hair: 'plum', Colour: 'brass', Treatment: 'success', Skin: 'muted', Nails: 'plum', Wellness: 'success', Makeup: 'brass' }
 
 export default function Services() {
@@ -15,6 +15,7 @@ export default function Services() {
   const [editingId, setEditingId] = useState(null)
   const [form, setForm] = useState(emptyForm)
   const [confirmDelete, setConfirmDelete] = useState(null)
+  const [comboSearch, setComboSearch] = useState('')
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase()
@@ -28,13 +29,30 @@ export default function Services() {
   function openAdd() {
     setForm(emptyForm)
     setEditingId(null)
+    setComboSearch('')
     setModalOpen(true)
   }
 
   function openEdit(s) {
-    setForm({ name: s.name, category: s.category, gender: s.gender, price: s.price, duration: s.duration })
+    setForm({
+      name: s.name,
+      category: s.category,
+      gender: s.gender,
+      price: s.price,
+      duration: s.duration,
+      isCombo: !!s.isCombo,
+      comboServiceIds: s.comboServiceIds || [],
+    })
     setEditingId(s.id)
+    setComboSearch('')
     setModalOpen(true)
+  }
+
+  function toggleComboService(id) {
+    setForm((s) => {
+      const has = s.comboServiceIds.includes(id)
+      return { ...s, comboServiceIds: has ? s.comboServiceIds.filter((x) => x !== id) : [...s.comboServiceIds, id] }
+    })
   }
 
   function handleSave() {
@@ -46,6 +64,8 @@ export default function Services() {
       gender: form.gender,
       price: Number(form.price),
       duration: Number(form.duration) || 0,
+      isCombo: form.isCombo,
+      comboServiceIds: form.isCombo ? form.comboServiceIds : [],
     })
     setModalOpen(false)
   }
@@ -92,7 +112,16 @@ export default function Services() {
               <tbody className="divide-y divide-black/5">
                 {filtered.map((s) => (
                   <tr key={s.id} className="hover:bg-black/[0.015]">
-                    <td className="px-5 py-3.5 font-medium text-ink">{s.name}</td>
+                    <td className="px-5 py-3.5 font-medium text-ink">
+                      <span className="flex items-center gap-1.5">
+                        {s.name}
+                        {s.isCombo && (
+                          <Badge tone="brass">
+                            <Sparkles size={10} className="inline -mt-0.5 mr-0.5" /> Combo
+                          </Badge>
+                        )}
+                      </span>
+                    </td>
                     <td className="px-5 py-3.5">
                       <Badge tone={CATEGORY_TONES[s.category] || 'muted'}>{s.category}</Badge>
                     </td>
@@ -169,6 +198,66 @@ export default function Services() {
                 onChange={(e) => setForm((s) => ({ ...s, duration: e.target.value }))}
               />
             </div>
+          </div>
+          <div className="border-t border-black/5 pt-3">
+            <label className="flex items-center gap-2 text-sm text-ink">
+              <input
+                type="checkbox"
+                checked={form.isCombo}
+                onChange={(e) => setForm((s) => ({ ...s, isCombo: e.target.checked }))}
+                className="w-4 h-4 accent-plum"
+              />
+              This is a combo offer (bundles other services at one price)
+            </label>
+            {form.isCombo && (
+              <div className="mt-3">
+                <label className="label">Included services</label>
+                <div className="relative mb-2">
+                  <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                  <input
+                    className="input pl-9"
+                    placeholder="Search services…"
+                    value={comboSearch}
+                    onChange={(e) => setComboSearch(e.target.value)}
+                  />
+                </div>
+                <div className="max-h-40 overflow-y-auto rounded-lg border border-black/10 p-2 space-y-1">
+                  {services
+                    .filter((s) => s.id !== editingId && !s.isCombo)
+                    .filter((s) => {
+                      const q = comboSearch.trim().toLowerCase()
+                      return !q || s.name.toLowerCase().includes(q) || s.category.toLowerCase().includes(q)
+                    })
+                    .map((s) => (
+                      <label key={s.id} className="flex items-center gap-2 text-sm text-ink px-1.5 py-1 rounded hover:bg-black/[0.03] cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={form.comboServiceIds.includes(s.id)}
+                          onChange={() => toggleComboService(s.id)}
+                          className="w-4 h-4 accent-plum"
+                        />
+                        {s.name}
+                        <span className="text-muted text-xs ml-auto">{formatCurrency(s.price, settings.currencySymbol)}</span>
+                      </label>
+                    ))}
+                  {services.filter((s) => s.id !== editingId && !s.isCombo).length === 0 && (
+                    <p className="text-xs text-muted px-1.5 py-1">Add some individual services first.</p>
+                  )}
+                  {services
+                    .filter((s) => s.id !== editingId && !s.isCombo)
+                    .filter((s) => {
+                      const q = comboSearch.trim().toLowerCase()
+                      return !q || s.name.toLowerCase().includes(q) || s.category.toLowerCase().includes(q)
+                    }).length === 0 && services.filter((s) => s.id !== editingId && !s.isCombo).length > 0 && (
+                    <p className="text-xs text-muted px-1.5 py-1">No matching services found.</p>
+                  )}
+                </div>
+                <p className="text-xs text-muted mt-1.5">
+                  Set the combo's own bundle price above — it's billed as one line item, showing the included
+                  services underneath on the invoice.
+                </p>
+              </div>
+            )}
           </div>
           <div className="flex items-center justify-end gap-2 pt-2">
             <button onClick={() => setModalOpen(false)} className="btn-ghost">

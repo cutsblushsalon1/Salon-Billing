@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react'
 import { Search, Plus, Minus, Trash2, Scissors, Package, Save, TriangleAlert } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { Modal } from './ui.jsx'
-import { calcBillTotals, calcLineTotal, formatCurrency, matchesCatalogQuery } from '../utils/helpers.js'
+import { calcBillTotals, calcLineTotal, formatCurrency, matchesCatalogQuery, getComboServiceNames } from '../utils/helpers.js'
 
 const PAYMENT_METHODS = ['Cash', 'Card', 'UPI', 'Wallet']
 
@@ -36,7 +36,21 @@ export default function EditBillModal({ bill, open, onClose }) {
     setItems((prev) => {
       const existing = prev.find((c) => c.refId === item.id && c.type === type)
       if (existing) return prev.map((c) => (c.refId === item.id && c.type === type ? { ...c, qty: c.qty + 1 } : c))
-      return [...prev, { refId: item.id, type, name: item.name, price: item.price, qty: 1, discountPercent: 0, staffId: '', staffName: '' }]
+      return [
+        ...prev,
+        {
+          refId: item.id,
+          type,
+          name: item.name,
+          price: item.price,
+          qty: 1,
+          discountPercent: 0,
+          staffId: '',
+          staffName: '',
+          isCombo: !!item.isCombo,
+          comboItems: item.isCombo ? getComboServiceNames(item, services) : [],
+        },
+      ]
     })
   }
 

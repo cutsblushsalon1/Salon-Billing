@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { Scissors, AlertCircle, Download } from 'lucide-react'
+import { Scissors, AlertCircle, Download, Star } from 'lucide-react'
 import { InvoiceLayout } from '../components/BillPreview.jsx'
 import { fetchInvoiceByBillNo } from '../utils/invoiceSync.js'
 import { downloadBillPDF } from '../utils/pdf.js'
@@ -61,10 +61,49 @@ export default function PublicInvoice() {
           </div>
         </div>
 
-        <div className="flex justify-center mt-5">
-          <button onClick={() => downloadBillPDF(bill, settings)} className="btn-ghost">
-            <Download size={15} /> Download PDF
-          </button>
+        {/* Customer actions */}
+        <div className="mt-6">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+            {settings.googleReviewLink && (
+              <a
+                href={settings.googleReviewLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="
+                  w-full sm:w-[210px]
+                  h-11
+                  inline-flex items-center justify-center gap-2
+                  rounded-lg
+                  bg-ink text-white
+                  px-4
+                  text-sm font-medium
+                  transition-opacity hover:opacity-90
+                "
+              >
+                <Star size={14} fill="currentColor" />
+                Leave a Google Review
+              </a>
+            )}
+
+            <button
+              onClick={() => downloadBillPDF(bill, settings)}
+              className="
+                w-full sm:w-[210px]
+                h-11
+                inline-flex items-center justify-center gap-2
+                rounded-lg
+                border border-black/10
+                bg-white
+                text-ink
+                px-4
+                text-sm font-medium
+                transition-colors hover:bg-black/[0.03]
+              "
+            >
+              <Download size={15} />
+              Download Invoice PDF
+            </button>
+          </div>
         </div>
       </div>
     </div>
