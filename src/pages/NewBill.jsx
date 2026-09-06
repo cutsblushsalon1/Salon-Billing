@@ -545,11 +545,6 @@ export default function NewBill() {
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-medium text-ink truncate flex items-center gap-1.5">
                             {c.name}
-                            {c.isCombo && (
-                              <Badge tone="brass">
-                                <Sparkles size={10} className="inline -mt-0.5 mr-0.5" /> Combo
-                              </Badge>
-                            )}
                           </p>
                           <p className="text-xs text-muted">{formatCurrency(c.price, settings.currencySymbol)} each</p>
                           {c.isCombo && c.comboItems?.length > 0 && (
