@@ -33,7 +33,7 @@ import {
   getComboServiceNames,
   matchesCatalogQuery,
   uid,
-  capitalizeWords,
+  capitalizeWordsPreserveSpaces,
 } from '../utils/helpers.js'
 import { downloadBillPDF } from '../utils/pdf.js'
 
@@ -235,7 +235,7 @@ export default function NewBill() {
   function resolveClient() {
     if (selectedClient) return selectedClient
     if (showNewClientForm && newClient.name.trim()) {
-      const client = { id: uid('cli'), ...newClient }
+      const client = { id: uid('cli'), ...newClient, name: capitalizeWordsPreserveSpaces(newClient.name) }
       upsertClient(client)
       return client
     }
@@ -247,7 +247,7 @@ export default function NewBill() {
     const client = resolveClient()
     const staffList = Array.from(new Map(cart.filter((c) => c.staffId).map((c) => [c.staffId, { id: c.staffId, name: c.staffName }])).values())
     const bill = createBill({
-      client: client ? { id: client.id, name: client.name, phone: client.phone } : { name: 'Walk-in Customer' },
+      client: client ? { id: client.id, name: capitalizeWordsPreserveSpaces(client.name), phone: client.phone } : { name: 'Walk-in Customer' },
       staffList,
       items: cart,
       date: billDateObj.toISOString(),
@@ -359,7 +359,7 @@ export default function NewBill() {
                     className="input"
                     placeholder="Full name"
                     value={newClient.name}
-                    onChange={(e) => setNewClient((s) => ({ ...s, name: capitalizeWords(e.target.value) }))}
+                    onChange={(e) => setNewClient((s) => ({ ...s, name: e.target.value }))}
                   />
                   <input
                     className="input"
@@ -478,6 +478,11 @@ export default function NewBill() {
                       <p className="text-sm font-medium text-ink truncate flex items-center gap-1.5">
                         {item.name}
                         {isFreeEligible && <Badge tone="success">Free eligible</Badge>}
+                        {catalogTab === 'service' && item.isCombo && (
+                          <Badge tone="brass">
+                            <Sparkles size={10} className="inline -mt-0.5 mr-0.5" /> Combo
+                          </Badge>
+                        )}
                       </p>
                       <p className="text-xs text-muted">
                         {formatCurrency(item.price, settings.currencySymbol)}
@@ -543,7 +548,7 @@ export default function NewBill() {
                             {c.name}
                             {c.isCombo && (
                               <Badge tone="brass">
-                                Combo Offer
+                                <Sparkles size={10} className="inline -mt-0.5 mr-0.5" /> Combo
                               </Badge>
                             )}
                           </p>

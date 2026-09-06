@@ -2,9 +2,7 @@ import React, { useMemo, useState } from 'react'
 import { Search, Plus, Minus, Trash2, Scissors, Package, Save, TriangleAlert } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { Modal } from './ui.jsx'
-import { calcBillTotals, calcLineTotal, formatCurrency, matchesCatalogQuery, getComboServiceNames,
-  capitalizeWords
-} from '../utils/helpers.js'
+import { calcBillTotals, calcLineTotal, formatCurrency, matchesCatalogQuery, getComboServiceNames , capitalizeWordsPreserveSpaces } from '../utils/helpers.js'
 
 const PAYMENT_METHODS = ['Cash', 'Card', 'UPI', 'Wallet']
 
@@ -94,9 +92,10 @@ export default function EditBillModal({ bill, open, onClose }) {
 
     const trimmedName = clientName.trim()
     const trimmedPhone = clientPhone.trim()
+    const normalizedClientName = capitalizeWordsPreserveSpaces(trimmedName)
     const updatedClient = bill.client?.id
-      ? { ...bill.client, name: trimmedName, phone: trimmedPhone }
-      : { name: trimmedName || 'Walk-in Customer', ...(trimmedPhone ? { phone: trimmedPhone } : {}) }
+      ? { ...bill.client, name: normalizedClientName, phone: trimmedPhone }
+      : { name: normalizedClientName || 'Walk-in Customer', ...(trimmedPhone ? { phone: trimmedPhone } : {}) }
 
     updateBill(bill, {
       items,
@@ -114,7 +113,7 @@ export default function EditBillModal({ bill, open, onClose }) {
     // live on this one invoice while Clients, Reports, and Follow-ups still
     // showed the old name/phone.
     if (bill.client?.id) {
-      upsertClient({ id: bill.client.id, name: trimmedName, phone: trimmedPhone })
+      upsertClient({ id: bill.client.id, name: normalizedClientName, phone: trimmedPhone })
     }
 
     onClose()
@@ -130,7 +129,7 @@ export default function EditBillModal({ bill, open, onClose }) {
               <input
                 className={`input ${!clientName.trim() ? 'border-danger/40' : ''}`}
                 value={clientName}
-                onChange={(e) => setClientName(capitalizeWords(e.target.value))}
+                onChange={(e) => setClientName(e.target.value)}
                 placeholder="Walk-in Customer"
               />
             </div>

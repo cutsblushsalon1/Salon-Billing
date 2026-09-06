@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import { seedServices, seedProducts, seedStaff, seedTemplates, seedMembershipPlans, defaultSettings } from '../data/seed.js'
-import { uid, buildInvoiceNumber, capitalizeWords } from '../utils/helpers.js'
+import { uid, buildInvoiceNumber } from '../utils/helpers.js'
 import { pushInvoiceToSupabase } from '../utils/invoiceSync.js'
 import { fetchAppState, fetchAppStateKey, saveAppState } from '../lib/appStateSync.js'
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient.js'
@@ -103,38 +103,6 @@ export function AppProvider({ children }) {
   // whatever's already saved remotely before the pull has a chance to land.
   const [hydrated, setHydrated] = useState(false)
 
-  // Normalise legacy/local/remote data once so older records also follow the
-  // same name convention, not just newly-created clients and services.
-  useEffect(() => {
-    if (!hydrated) return
-
-    setClients((prev) =>
-      prev.map((client) => ({
-        ...client,
-        name: capitalizeWords(client.name).trim(),
-        visits: (client.visits || []).map((visit) => ({
-          ...visit,
-          items: (visit.items || []).map((name) => capitalizeWords(name)),
-        })),
-      })),
-    )
-
-    setServices((prev) => prev.map((service) => ({ ...service, name: capitalizeWords(service.name).trim() })))
-
-    setBills((prev) =>
-      prev.map((bill) => ({
-        ...bill,
-        client: bill.client ? { ...bill.client, name: capitalizeWords(bill.client.name).trim() } : bill.client,
-        items: (bill.items || []).map((item) => ({ ...item, name: capitalizeWords(item.name).trim() })),
-      })),
-    )
-
-    setClientMemberships((prev) =>
-      prev.map((membership) => ({ ...membership, clientName: capitalizeWords(membership.clientName).trim() })),
-    )
-  }, [hydrated])
-
-
   // One-time pull on mount: whatever's in Supabase wins over localStorage/
   // seed data, since Supabase is the shared source of truth across devices.
   // If Supabase isn't configured (no env vars) or the request fails, this
@@ -174,7 +142,7 @@ export function AppProvider({ children }) {
     }
     let cancelled = false
     fetchAppointments().then((rows) => {
-      if (!cancelled) setAppointments(rows.map((row) => ({ ...row, client_name: capitalizeWords(row.client_name).trim(), service_name: capitalizeWords(row.service_name).trim() })))
+      if (!cancelled) setAppointments(rows)
     })
     // Ask for browser notification permission once, up front, so the
     // permission prompt isn't tied to (and blocked by) the realtime event
@@ -185,7 +153,7 @@ export function AppProvider({ children }) {
         notifyNewAppointment(payload.new)
       }
       fetchAppointments().then((rows) => {
-        if (!cancelled) setAppointments(rows.map((row) => ({ ...row, client_name: capitalizeWords(row.client_name).trim(), service_name: capitalizeWords(row.service_name).trim() })))
+        if (!cancelled) setAppointments(rows)
       })
     })
     return () => {
@@ -202,15 +170,11 @@ export function AppProvider({ children }) {
     if (hydrated) saveAppState('clients', clients)
   }, [clients, hydrated])
   useEffect(() => {
+    // Persistence to Supabase is handled by upsertService/deleteService using
+    // a fresh-read + operation + write flow. Keeping a generic effect here
+    // would reintroduce the stale-array overwrite bug on multi-device use.
     saveJSON(STORAGE_KEYS.services, services)
-    if (hydrated) {
-      saveAppState('services', services)
-      // Also publish to the public, anon-readable catalog so the salon
-      // booking website's service picker always reflects the current list
-      // (including newly added services, price changes, or removals).
-      pushPublicCatalog('services', services)
-    }
-  }, [services, hydrated])
+  }, [services])
   useEffect(() => {
     saveJSON(STORAGE_KEYS.products, products)
     if (hydrated) saveAppState('products', products)
@@ -290,7 +254,7 @@ export function AppProvider({ children }) {
   }, [])
 
   const logout = useCallback(async () => {
-    await supabase.auth.signOut()
+    await supabase.auth.signOut({ scope: 'local' })
     setUser(null)
   }, [])
 
@@ -312,11 +276,10 @@ export function AppProvider({ children }) {
 
   // ---- Clients ----
   const upsertClient = useCallback((client) => {
-    const normalized = { ...client, name: capitalizeWords(client.name).trim() }
     setClients((prev) => {
-      const exists = prev.find((c) => c.id === normalized.id)
-      if (exists) return prev.map((c) => (c.id === normalized.id ? { ...c, ...normalized } : c))
-      return [...prev, { visits: [], totalSpent: 0, createdAt: new Date().toISOString(), ...normalized }]
+      const exists = prev.find((c) => c.id === client.id)
+      if (exists) return prev.map((c) => (c.id === client.id ? { ...c, ...client } : c))
+      return [...prev, { visits: [], totalSpent: 0, createdAt: new Date().toISOString(), ...client }]
     })
   }, [])
 
@@ -327,18 +290,40 @@ export function AppProvider({ children }) {
   }, [])
 
   // ---- Services ----
-  const upsertService = useCallback((service) => {
-    const normalized = { ...service, name: capitalizeWords(service.name).trim() }
-    setServices((prev) => {
-      const exists = prev.find((s) => s.id === normalized.id)
-      if (exists) return prev.map((s) => (s.id === normalized.id ? { ...s, ...normalized } : s))
-      return [...prev, { id: uid('svc'), ...normalized }]
-    })
-  }, [])
+  // Services are shared across every salon device. Never write this device's
+  // potentially stale in-memory array directly to Supabase: another device
+  // may have added/edited a service since this page loaded. Always fetch the
+  // latest shared list, apply only this operation, then save that merged list.
+  const upsertService = useCallback(async (service) => {
+    const nextService = service?.id ? service : { id: uid('svc'), ...service }
+    const remote = await fetchAppStateKey('services')
+    const base = Array.isArray(remote) ? remote : services
+    const exists = base.some((s) => s.id === nextService.id)
+    const merged = exists
+      ? base.map((s) => (s.id === nextService.id ? { ...s, ...nextService } : s))
+      : [...base, nextService]
 
-  const deleteService = useCallback((id) => {
-    setServices((prev) => prev.filter((s) => s.id !== id))
-  }, [])
+    setServices(merged)
+    saveJSON(STORAGE_KEYS.services, merged)
+    if (hydrated) {
+      await saveAppState('services', merged)
+      await pushPublicCatalog('services', merged)
+    }
+    return nextService
+  }, [hydrated, services])
+
+  const deleteService = useCallback(async (id) => {
+    const remote = await fetchAppStateKey('services')
+    const base = Array.isArray(remote) ? remote : services
+    const merged = base.filter((s) => s.id !== id)
+
+    setServices(merged)
+    saveJSON(STORAGE_KEYS.services, merged)
+    if (hydrated) {
+      await saveAppState('services', merged)
+      await pushPublicCatalog('services', merged)
+    }
+  }, [hydrated, services])
 
   // ---- Products ----
   const upsertProduct = useCallback((product) => {

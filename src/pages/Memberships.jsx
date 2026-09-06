@@ -22,7 +22,7 @@ import {
   getPlanFreeServiceCount,
   matchesCatalogQuery,
   uid,
-  capitalizeWords
+  capitalizeWordsPreserveSpaces,
 } from '../utils/helpers.js'
 
 const TABS = [
@@ -211,7 +211,7 @@ export default function Memberships() {
     const clientId = existing?.id || uid('cli')
     upsertClient({
       id: clientId,
-      name: enrollForm.name.trim(),
+      name: capitalizeWordsPreserveSpaces(enrollForm.name.trim()),
       phone: enrollForm.phone.trim(),
       gender: existing?.gender || 'Female',
       birthday: enrollForm.birthday || '',
@@ -739,7 +739,7 @@ export default function Memberships() {
               <input
                 className="input"
                 value={enrollForm.name}
-                onChange={(e) => setEnrollForm((s) => ({ ...s, name: capitalizeWords(e.target.value) }))}
+                onChange={(e) => setEnrollForm((s) => ({ ...s, name: e.target.value }))}
               />
             </div>
             <div>

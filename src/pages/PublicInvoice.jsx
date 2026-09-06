@@ -61,50 +61,27 @@ export default function PublicInvoice() {
           </div>
         </div>
 
-        {/* Customer actions */}
-        <div className="mt-6">
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-            {settings.googleReviewLink && (
-              <a
-                href={settings.googleReviewLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="
-                  w-full sm:w-[210px]
-                  h-11
-                  inline-flex items-center justify-center gap-2
-                  rounded-lg
-                  bg-ink text-white
-                  px-4
-                  text-sm font-medium
-                  transition-opacity hover:opacity-90
-                "
-              >
-                <Star size={14} fill="currentColor" />
-                Leave a Google Review
-              </a>
-            )}
-
-            <button
-              onClick={() => downloadBillPDF(bill, settings)}
-              className="
-                w-full sm:w-[210px]
-                h-11
-                inline-flex items-center justify-center gap-2
-                rounded-lg
-                border border-black/10
-                bg-white
-                text-ink
-                px-4
-                text-sm font-medium
-                transition-colors hover:bg-black/[0.03]
-              "
+        {settings.googleReviewLink ? (
+          <div className="grid grid-cols-2 gap-3 mt-5 max-w-sm mx-auto sm:flex sm:justify-center sm:max-w-none">
+            <a
+              href={settings.googleReviewLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-brass w-full sm:w-auto"
             >
-              <Download size={15} />
-              Download Invoice PDF
+              <Star size={15} /> Google Review
+            </a>
+            <button onClick={() => downloadBillPDF(bill, settings)} className="btn-ghost w-full sm:w-auto">
+              <Download size={15} /> Download PDF
             </button>
           </div>
-        </div>
+        ) : (
+          <div className="flex justify-center mt-5">
+            <button onClick={() => downloadBillPDF(bill, settings)} className="btn-ghost">
+              <Download size={15} /> Download PDF
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

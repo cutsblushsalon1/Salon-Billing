@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react'
 import { Search, Plus, Pencil, Trash2, Scissors, Clock, Download, Sparkles } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, Modal, EmptyState, Badge } from '../components/ui.jsx'
-import { formatCurrency, uid, capitalizeWords } from '../utils/helpers.js'
+import { formatCurrency, uid, capitalizeWordsPreserveSpaces } from '../utils/helpers.js'
 import { downloadCatalogExcel } from '../utils/excel.js'
 
 const emptyForm = { name: '', category: '', gender: 'Unisex', price: '', duration: '', isCombo: false, comboServiceIds: [] }
@@ -11,11 +11,11 @@ const CATEGORY_TONES = { Hair: 'plum', Colour: 'brass', Treatment: 'success', Sk
 export default function Services() {
   const { services, products, settings, upsertService, deleteService } = useApp()
   const [query, setQuery] = useState('')
+  const [comboQuery, setComboQuery] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const [form, setForm] = useState(emptyForm)
   const [confirmDelete, setConfirmDelete] = useState(null)
-  const [comboSearch, setComboSearch] = useState('')
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase()
@@ -28,8 +28,8 @@ export default function Services() {
 
   function openAdd() {
     setForm(emptyForm)
+    setComboQuery('')
     setEditingId(null)
-    setComboSearch('')
     setModalOpen(true)
   }
 
@@ -44,7 +44,7 @@ export default function Services() {
       comboServiceIds: s.comboServiceIds || [],
     })
     setEditingId(s.id)
-    setComboSearch('')
+    setComboQuery('')
     setModalOpen(true)
   }
 
@@ -59,8 +59,8 @@ export default function Services() {
     if (!form.name.trim() || !form.price) return
     upsertService({
       id: editingId || uid('svc'),
-      name: form.name,
-      category: form.category || 'General',
+      name: capitalizeWordsPreserveSpaces(form.name),
+      category: capitalizeWordsPreserveSpaces(form.category || 'General'),
       gender: form.gender,
       price: Number(form.price),
       duration: Number(form.duration) || 0,
@@ -117,7 +117,7 @@ export default function Services() {
                         {s.name}
                         {s.isCombo && (
                           <Badge tone="brass">
-                            Combo Offer
+                            <Sparkles size={10} className="inline -mt-0.5 mr-0.5" /> Combo
                           </Badge>
                         )}
                       </span>
@@ -216,16 +216,16 @@ export default function Services() {
                   <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
                   <input
                     className="input pl-9"
-                    placeholder="Search services…"
-                    value={comboSearch}
-                    onChange={(e) => setComboSearch(e.target.value)}
+                    placeholder="Search services to include…"
+                    value={comboQuery}
+                    onChange={(e) => setComboQuery(e.target.value)}
                   />
                 </div>
                 <div className="max-h-40 overflow-y-auto rounded-lg border border-black/10 p-2 space-y-1">
                   {services
                     .filter((s) => s.id !== editingId && !s.isCombo)
                     .filter((s) => {
-                      const q = comboSearch.trim().toLowerCase()
+                      const q = comboQuery.trim().toLowerCase()
                       return !q || s.name.toLowerCase().includes(q) || s.category.toLowerCase().includes(q)
                     })
                     .map((s) => (
@@ -243,14 +243,15 @@ export default function Services() {
                   {services.filter((s) => s.id !== editingId && !s.isCombo).length === 0 && (
                     <p className="text-xs text-muted px-1.5 py-1">Add some individual services first.</p>
                   )}
-                  {services
-                    .filter((s) => s.id !== editingId && !s.isCombo)
-                    .filter((s) => {
-                      const q = comboSearch.trim().toLowerCase()
-                      return !q || s.name.toLowerCase().includes(q) || s.category.toLowerCase().includes(q)
-                    }).length === 0 && services.filter((s) => s.id !== editingId && !s.isCombo).length > 0 && (
-                    <p className="text-xs text-muted px-1.5 py-1">No matching services found.</p>
-                  )}
+                  {services.filter((s) => s.id !== editingId && !s.isCombo).length > 0 &&
+                    services
+                      .filter((s) => s.id !== editingId && !s.isCombo)
+                      .filter((s) => {
+                        const q = comboQuery.trim().toLowerCase()
+                        return !q || s.name.toLowerCase().includes(q) || s.category.toLowerCase().includes(q)
+                      }).length === 0 && (
+                      <p className="text-xs text-muted px-1.5 py-1">No matching services found.</p>
+                    )}
                 </div>
                 <p className="text-xs text-muted mt-1.5">
                   Set the combo's own bundle price above — it's billed as one line item, showing the included
