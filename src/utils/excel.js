@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx'
-import { formatDate, formatCurrency } from './helpers.js'
+import { formatDate, formatCurrency, formatPhoneDisplay } from './helpers.js'
 
 export function downloadAttendanceExcel(records, staffList, label = 'attendance') {
   const rows = records.map((a) => {
@@ -65,18 +65,28 @@ export function downloadCatalogExcel({ services, products, currencySymbol = '\u2
 
 // Exports all clients/contacts to an Excel workbook.
 export function downloadClientsExcel(clients, currencySymbol = '\u20B9', label = 'clients') {
-  const rows = clients.map((c) => ({
-    'Client Name': c.name || '',
-    Phone: c.phone || '',
-    Email: c.email || '',
-    Gender: c.gender || '',
-    Notes: c.notes || '',
-    'Total Spent': Number(c.totalSpent || 0),
-    'Total Spent (formatted)': formatCurrency(c.totalSpent || 0, currencySymbol),
-    Visits: c.visits?.length || 0,
-    'Last Visit': c.lastVisit ? formatDate(c.lastVisit) : '',
-    'Added On': c.createdAt ? formatDate(c.createdAt) : '',
-  }))
+  const rows = clients.map((c) => {
+    const visitCount = c.visits?.length || 0
+    // Every client gets 'Customers'; gender (if set) follows; 'Repeat'
+    // is appended for anyone with more than 5 visits.
+    const tags = ['Customers']
+    if (c.gender) tags.push(c.gender)
+    if (visitCount > 5) tags.push('Repeat')
+
+    return {
+      'Client Name': c.name || '',
+      Phone: c.phone ? formatPhoneDisplay(c.phone) : '',
+      Email: c.email || '',
+      Gender: c.gender || '',
+      Tags: tags.join(', '),
+      Notes: c.notes || '',
+      'Total Spent': Number(c.totalSpent || 0),
+      'Total Spent (formatted)': formatCurrency(c.totalSpent || 0, currencySymbol),
+      Visits: visitCount,
+      'Last Visit': c.lastVisit ? formatDate(c.lastVisit) : '',
+      'Added On': c.createdAt ? formatDate(c.createdAt) : '',
+    }
+  })
 
   const worksheet = XLSX.utils.json_to_sheet(rows)
   worksheet['!cols'] = [
@@ -84,6 +94,7 @@ export function downloadClientsExcel(clients, currencySymbol = '\u20B9', label =
     { wch: 16 },
     { wch: 30 },
     { wch: 12 },
+    { wch: 24 },
     { wch: 42 },
     { wch: 14 },
     { wch: 24 },

@@ -1,6 +1,6 @@
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
-import { formatCurrency, formatDate, calcLineTotal, getBillStaffNames } from './helpers.js'
+import { formatCurrency, formatDate, calcLineTotal, getBillStaffNames, formatPhoneDisplay } from './helpers.js'
 
 export function downloadBillPDF(bill, settings) {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' })
@@ -39,7 +39,7 @@ export function downloadBillPDF(bill, settings) {
   doc.text(`Bill to: ${bill.client?.name || 'Walk-in Customer'}`, margin, y)
   y += 14
   if (bill.client?.phone) {
-    doc.text(`Phone: ${bill.client.phone}`, margin, y)
+    doc.text(`Phone: ${formatPhoneDisplay(bill.client.phone)}`, margin, y)
     y += 14
   }
   const staffNames = getBillStaffNames(bill)
