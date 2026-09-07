@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { CalendarClock, Check, X, Trash2, ReceiptText, Phone, RefreshCw, CalendarCheck2 } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, EmptyState, Badge, StatCard } from '../components/ui.jsx'
-import { formatDate } from '../utils/helpers.js'
+import { formatDate, formatPhoneDisplay } from '../utils/helpers.js'
 
 const TABS = [
   { id: 'upcoming', label: 'Upcoming' },
@@ -115,7 +115,7 @@ export default function Appointments() {
                       {a.client_name}
                       {a.phone && (
                         <span className="flex items-center gap-1 text-xs text-muted font-normal mt-0.5">
-                          <Phone size={11} /> {a.phone}
+                          <Phone size={11} /> {formatPhoneDisplay(a.phone)}
                         </span>
                       )}
                     </td>

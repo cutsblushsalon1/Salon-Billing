@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { useApp } from "../context/AppContext.jsx";
 import { PageHeader, Modal, EmptyState, Badge } from "../components/ui.jsx";
-import { formatCurrency, formatDate, uid, capitalizeWordsPreserveSpaces } from "../utils/helpers.js";
+import { formatCurrency, formatDate, uid, capitalizeWordsPreserveSpaces, formatPhoneDisplay } from "../utils/helpers.js";
 import { downloadClientsExcel } from "../utils/excel.js";
 
 // Accepts common header spellings from exported spreadsheets, case-insensitive
@@ -245,7 +245,7 @@ export default function Clients() {
                       {c.name}
                     </p>
                     <p className="text-xs text-muted flex items-center gap-1">
-                      <Phone size={11} /> {c.phone || "—"}
+                      <Phone size={11} /> {c.phone ? formatPhoneDisplay(c.phone) : "—"}
                     </p>
                   </div>
                 </div>
@@ -317,20 +317,25 @@ export default function Clients() {
             <input
               className="input"
               value={form.name}
-              onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))}
+              onChange={(e) => setForm((s) => ({ ...s, name: capitalizeWordsPreserveSpaces(e.target.value) }))}
               autoFocus
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Phone</label>
-              <input
-                className="input"
-                value={form.phone}
-                onChange={(e) =>
-                  setForm((s) => ({ ...s, phone: e.target.value }))
-                }
-              />
+              <div className="relative">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-muted font-medium pointer-events-none">
+                  +91
+                </span>
+                <input
+                  className="input pl-12"
+                  value={form.phone}
+                  onChange={(e) =>
+                    setForm((s) => ({ ...s, phone: e.target.value.replace(/[^0-9]/g, '').slice(0, 10) }))
+                  }
+                />
+              </div>
             </div>
             <div>
               <label className="label">Gender</label>

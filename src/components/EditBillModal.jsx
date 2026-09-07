@@ -129,19 +129,24 @@ export default function EditBillModal({ bill, open, onClose }) {
               <input
                 className={`input ${!clientName.trim() ? 'border-danger/40' : ''}`}
                 value={clientName}
-                onChange={(e) => setClientName(e.target.value)}
+                onChange={(e) => setClientName(capitalizeWordsPreserveSpaces(e.target.value))}
                 placeholder="Walk-in Customer"
               />
             </div>
             <div>
               <label className="label">Phone number</label>
-              <input
-                className="input"
-                type="tel"
-                value={clientPhone}
-                onChange={(e) => setClientPhone(e.target.value)}
-                placeholder="10-digit mobile"
-              />
+              <div className="relative">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-muted font-medium pointer-events-none">
+                  +91
+                </span>
+                <input
+                  className="input pl-12"
+                  type="tel"
+                  value={clientPhone}
+                  onChange={(e) => setClientPhone(e.target.value.replace(/[^0-9]/g, '').slice(0, 10))}
+                  placeholder="10-digit mobile"
+                />
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-3 flex-wrap">

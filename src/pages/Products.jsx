@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react'
 import { Search, Plus, Pencil, Trash2, Package, PackagePlus, PackageMinus, AlertTriangle, Download } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, Modal, EmptyState, Badge } from '../components/ui.jsx'
-import { formatCurrency, uid } from '../utils/helpers.js'
+import { formatCurrency, uid, capitalizeWordsPreserveSpaces } from '../utils/helpers.js'
 import { downloadCatalogExcel } from '../utils/excel.js'
 
 const emptyForm = { name: '', category: '', price: '', stock: '', lowStockAt: '5' }
@@ -42,8 +42,8 @@ export default function Products() {
     if (!form.name.trim() || !form.price) return
     upsertProduct({
       id: editingId || uid('prd'),
-      name: form.name,
-      category: form.category || 'General',
+      name: capitalizeWordsPreserveSpaces(form.name),
+      category: capitalizeWordsPreserveSpaces(form.category || 'General'),
       price: Number(form.price),
       stock: Number(form.stock) || 0,
       lowStockAt: Number(form.lowStockAt) || 5,
@@ -144,7 +144,7 @@ export default function Products() {
         <div className="space-y-3">
           <div>
             <label className="label">Product name</label>
-            <input className="input" value={form.name} onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))} autoFocus />
+            <input className="input" value={form.name} onChange={(e) => setForm((s) => ({ ...s, name: capitalizeWordsPreserveSpaces(e.target.value) }))} autoFocus />
           </div>
           <div>
             <label className="label">Category</label>
@@ -152,7 +152,7 @@ export default function Products() {
               className="input"
               placeholder="Haircare, Skincare…"
               value={form.category}
-              onChange={(e) => setForm((s) => ({ ...s, category: e.target.value }))}
+              onChange={(e) => setForm((s) => ({ ...s, category: capitalizeWordsPreserveSpaces(e.target.value) }))}
             />
           </div>
           <div className="grid grid-cols-3 gap-3">

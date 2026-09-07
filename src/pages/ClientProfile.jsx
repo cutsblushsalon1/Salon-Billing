@@ -18,6 +18,7 @@ import {
   formatDate,
   getMembershipStatus,
   getPlanDiscountFields,
+  formatPhoneDisplay,
 } from '../utils/helpers.js'
 
 export default function ClientProfile() {
@@ -97,7 +98,7 @@ export default function ClientProfile() {
             <div className="flex items-center gap-3 text-sm text-muted mt-0.5 flex-wrap">
               {client.phone && (
                 <span className="flex items-center gap-1">
-                  <Phone size={13} /> {client.phone}
+                  <Phone size={13} /> {formatPhoneDisplay(client.phone)}
                 </span>
               )}
 

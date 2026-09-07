@@ -5,7 +5,7 @@ import { PageHeader, Modal, EmptyState, Badge } from '../components/ui.jsx'
 import BillPreview from '../components/BillPreview.jsx'
 import EditBillModal from '../components/EditBillModal.jsx'
 import InvoiceWhatsAppButton from '../components/InvoiceWhatsAppButton.jsx'
-import { formatCurrency, formatDateTime, isInRange, getBillStaffNames } from '../utils/helpers.js'
+import { formatCurrency, formatDateTime, isInRange, getBillStaffNames, formatPhoneDisplay } from '../utils/helpers.js'
 import { downloadBillPDF } from '../utils/pdf.js'
 
 const PAYMENT_FILTERS = ['All', 'Cash', 'Card', 'UPI', 'Wallet']
@@ -119,7 +119,7 @@ export default function BillingHistory() {
                     <td className="px-5 py-3.5 font-mono text-xs text-plum">{b.billNo}</td>
                     <td className="px-5 py-3.5">
                       <p className="font-medium text-ink">{b.client?.name || 'Walk-in'}</p>
-                      {b.client?.phone && <p className="text-xs text-muted">{b.client.phone}</p>}
+                      {b.client?.phone && <p className="text-xs text-muted">{formatPhoneDisplay(b.client.phone)}</p>}
                     </td>
                     <td className="px-5 py-3.5 text-muted whitespace-nowrap">{formatDateTime(b.date)}</td>
                     <td className="px-5 py-3.5 text-muted">{getBillStaffNames(b).join(', ') || '—'}</td>

@@ -211,6 +211,22 @@ export default function Reports() {
     return Object.entries(map).map(([name, value]) => ({ name, value }))
   }, [scopedBills])
 
+  // Cash-in-hand vs. bank-settled rollup for the selected range — "Bank"
+  // groups every non-cash method (UPI, Card, Bank Transfer, Other) since
+  // all of those settle into the bank account rather than the till.
+  const cashBankStats = useMemo(
+    () =>
+      scopedBills.reduce(
+        (acc, b) => {
+          if (b.paymentMethod === 'Cash') acc.cash += b.total
+          else acc.bank += b.total
+          return acc
+        },
+        { cash: 0, bank: 0 },
+      ),
+    [scopedBills],
+  )
+
   return (
     <div>
       <PageHeader eyebrow="Insights" title="Reports" subtitle="Track revenue, client value, service performance, and payment mix." />
@@ -470,39 +486,64 @@ export default function Reports() {
       )}
 
       {tab === 'payments' && (
-        <div className="card p-5 sm:p-6">
-          <p className="font-display text-lg text-ink mb-1">Payment method mix</p>
-          <p className="text-xs text-muted mb-4">Within selected date range</p>
-          {paymentStats.length === 0 ? (
-            <EmptyState icon={CreditCard} title="No payment data" subtitle="Generate bills to see payment method distribution." />
-          ) : (
-            <div className="flex flex-col sm:flex-row items-center gap-6">
-              <ResponsiveContainer width="100%" height={260} className="sm:w-1/2">
-                <PieChart>
-                  <Pie data={paymentStats} dataKey="value" nameKey="name" innerRadius={60} outerRadius={95} paddingAngle={2}>
-                    {paymentStats.map((entry, idx) => (
-                      <Cell key={entry.name} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(v) => formatCurrency(v, settings.currencySymbol)} />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="flex-1 space-y-2 w-full">
-                {paymentStats
-                  .sort((a, b) => b.value - a.value)
-                  .map((p, idx) => (
-                    <div key={p.name} className="flex items-center justify-between text-sm p-2.5 rounded-lg bg-black/[0.02]">
-                      <span className="flex items-center gap-2">
-                        <span className="w-2.5 h-2.5 rounded-full" style={{ background: PIE_COLORS[idx % PIE_COLORS.length] }} />
-                        {p.name}
-                      </span>
-                      <span className="font-semibold tabular">{formatCurrency(p.value, settings.currencySymbol)}</span>
-                    </div>
-                  ))}
+        <div className="space-y-6">
+          <div className="card p-5 sm:p-6">
+            <p className="font-display text-lg text-ink mb-1">Cash vs. Bank</p>
+            <p className="text-xs text-muted mb-4">
+              Bank = UPI + Card + Bank Transfer + Other, within the selected date range
+            </p>
+            <div className="grid grid-cols-2 gap-6">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted mb-1">Cash in hand</p>
+                <p className="font-display text-2xl text-ink tabular">{formatCurrency(cashBankStats.cash, settings.currencySymbol)}</p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted mb-1">In bank</p>
+                <p className="font-display text-2xl text-ink tabular">{formatCurrency(cashBankStats.bank, settings.currencySymbol)}</p>
               </div>
             </div>
-          )}
+            {cashBankStats.cash + cashBankStats.bank > 0 && (
+              <div className="h-2 rounded-full bg-black/5 overflow-hidden mt-4 flex">
+                <div className="h-full bg-success" style={{ width: `${(cashBankStats.cash / (cashBankStats.cash + cashBankStats.bank)) * 100}%` }} />
+                <div className="h-full bg-plum" style={{ width: `${(cashBankStats.bank / (cashBankStats.cash + cashBankStats.bank)) * 100}%` }} />
+              </div>
+            )}
+          </div>
+
+          <div className="card p-5 sm:p-6">
+            <p className="font-display text-lg text-ink mb-1">Payment method mix</p>
+            <p className="text-xs text-muted mb-4">Within selected date range</p>
+            {paymentStats.length === 0 ? (
+              <EmptyState icon={CreditCard} title="No payment data" subtitle="Generate bills to see payment method distribution." />
+            ) : (
+              <div className="flex flex-col sm:flex-row items-center gap-6">
+                <ResponsiveContainer width="100%" height={260} className="sm:w-1/2">
+                  <PieChart>
+                    <Pie data={paymentStats} dataKey="value" nameKey="name" innerRadius={60} outerRadius={95} paddingAngle={2}>
+                      {paymentStats.map((entry, idx) => (
+                        <Cell key={entry.name} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(v) => formatCurrency(v, settings.currencySymbol)} />
+                    <Legend wrapperStyle={{ fontSize: 12 }} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="flex-1 space-y-2 w-full">
+                  {paymentStats
+                    .sort((a, b) => b.value - a.value)
+                    .map((p, idx) => (
+                      <div key={p.name} className="flex items-center justify-between text-sm p-2.5 rounded-lg bg-black/[0.02]">
+                        <span className="flex items-center gap-2">
+                          <span className="w-2.5 h-2.5 rounded-full" style={{ background: PIE_COLORS[idx % PIE_COLORS.length] }} />
+                          {p.name}
+                        </span>
+                        <span className="font-semibold tabular">{formatCurrency(p.value, settings.currencySymbol)}</span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

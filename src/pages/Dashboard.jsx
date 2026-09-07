@@ -40,6 +40,22 @@ export default function Dashboard() {
   const monthRevenue = monthBillRevenue + monthMembershipRevenue
   const avgBill = bills.length ? bills.reduce((s, b) => s + b.total, 0) / bills.length : 0
 
+  // Cash-in-hand vs. bank-settled split, from bills only (memberships
+  // don't record a payment method). "Bank" groups every non-cash method
+  // — UPI, Card, Bank Transfer, and Other — since all of those land in
+  // the bank account rather than the till.
+  const splitCashBank = (billList) =>
+    billList.reduce(
+      (acc, b) => {
+        if (b.paymentMethod === 'Cash') acc.cash += b.total
+        else acc.bank += b.total
+        return acc
+      },
+      { cash: 0, bank: 0 },
+    )
+  const todayCashBank = splitCashBank(todayBills)
+  const monthCashBank = splitCashBank(monthBills)
+
   const maleClients = clients.filter((c) => c.gender === 'Male').length
   const femaleClients = clients.filter((c) => c.gender === 'Female').length
   const otherClients = clients.length - maleClients - femaleClients
@@ -249,34 +265,83 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* Quick actions */}
-        <div className="card p-5 sm:p-6">
-          <p className="font-display text-lg text-ink mb-4">Quick actions</p>
-          <div className="grid grid-cols-2 gap-3">
-            <QuickAction icon={Plus} label="New Bill" onClick={() => navigate('/new-bill')} />
-            <QuickAction icon={UserPlus} label="Add Client" onClick={() => navigate('/clients')} />
-            <QuickAction icon={Scissors} label="Add Service" onClick={() => navigate('/services')} />
-            <QuickAction icon={Package} label="Stock" onClick={() => navigate('/products')} />
+        <div className="space-y-6">
+          <div className="card p-5 sm:p-6">
+            <p className="font-display text-lg text-ink mb-1">Cash vs. Bank</p>
+            <p className="text-xs text-muted mb-4">Bank = UPI + Card + Bank Transfer + Other. From bills only.</p>
+            <div className="grid grid-cols-2 gap-5">
+              <CashBankSplit
+                label="Today"
+                cash={todayCashBank.cash}
+                bank={todayCashBank.bank}
+                currencySymbol={settings.currencySymbol}
+              />
+              <CashBankSplit
+                label="This Month"
+                cash={monthCashBank.cash}
+                bank={monthCashBank.bank}
+                currencySymbol={settings.currencySymbol}
+              />
+            </div>
           </div>
-          {dueForFollowUp > 0 && (
-            <div className="mt-4 p-3 rounded-lg bg-brass/10 text-brass-dark text-xs font-medium flex items-center justify-between">
-              <span className="flex items-center gap-1.5">
-                <Bell size={13} /> {dueForFollowUp} client{dueForFollowUp > 1 ? 's' : ''} due for a follow-up
-              </span>
-              <button onClick={() => navigate('/follow-ups')} className="underline font-semibold">
-                Review
-              </button>
+
+          {/* Quick actions */}
+          <div className="card p-5 sm:p-6">
+            <p className="font-display text-lg text-ink mb-4">Quick actions</p>
+            <div className="grid grid-cols-2 gap-3">
+              <QuickAction icon={Plus} label="New Bill" onClick={() => navigate('/new-bill')} />
+              <QuickAction icon={UserPlus} label="Add Client" onClick={() => navigate('/clients')} />
+              <QuickAction icon={Scissors} label="Add Service" onClick={() => navigate('/services')} />
+              <QuickAction icon={Package} label="Stock" onClick={() => navigate('/products')} />
             </div>
-          )}
-          {lowStockCount > 0 && (
-            <div className="mt-4 p-3 rounded-lg bg-danger/10 text-danger text-xs font-medium flex items-center justify-between">
-              <span>{lowStockCount} product{lowStockCount > 1 ? 's' : ''} running low</span>
-              <button onClick={() => navigate('/products')} className="underline font-semibold">
-                Review
-              </button>
-            </div>
-          )}
+            {dueForFollowUp > 0 && (
+              <div className="mt-4 p-3 rounded-lg bg-brass/10 text-brass-dark text-xs font-medium flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <Bell size={13} /> {dueForFollowUp} client{dueForFollowUp > 1 ? 's' : ''} due for a follow-up
+                </span>
+                <button onClick={() => navigate('/follow-ups')} className="underline font-semibold">
+                  Review
+                </button>
+              </div>
+            )}
+            {lowStockCount > 0 && (
+              <div className="mt-4 p-3 rounded-lg bg-danger/10 text-danger text-xs font-medium flex items-center justify-between">
+                <span>{lowStockCount} product{lowStockCount > 1 ? 's' : ''} running low</span>
+                <button onClick={() => navigate('/products')} className="underline font-semibold">
+                  Review
+                </button>
+              </div>
+            )}
+          </div>
         </div>
+      </div>
+    </div>
+  )
+}
+
+function CashBankSplit({ label, cash, bank, currencySymbol }) {
+  const total = cash + bank
+  const cashPct = total ? (cash / total) * 100 : 0
+  return (
+    <div>
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted mb-2">{label}</p>
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between text-sm">
+          <span className="flex items-center gap-1.5 text-ink">
+            <span className="w-2 h-2 rounded-full bg-success shrink-0" /> Cash
+          </span>
+          <span className="font-semibold tabular">{formatCurrency(cash, currencySymbol)}</span>
+        </div>
+        <div className="flex items-center justify-between text-sm">
+          <span className="flex items-center gap-1.5 text-ink">
+            <span className="w-2 h-2 rounded-full bg-plum shrink-0" /> Bank
+          </span>
+          <span className="font-semibold tabular">{formatCurrency(bank, currencySymbol)}</span>
+        </div>
+      </div>
+      <div className="h-1.5 rounded-full bg-black/5 overflow-hidden mt-2 flex">
+        <div className="h-full bg-success" style={{ width: `${cashPct}%` }} />
+        <div className="h-full bg-plum" style={{ width: `${100 - cashPct}%` }} />
       </div>
     </div>
   )

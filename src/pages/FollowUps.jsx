@@ -29,6 +29,8 @@ import {
   findActiveMembership,
   getMembershipStatus,
   uid,
+  formatPhoneDisplay,
+  capitalizeWordsPreserveSpaces,
 } from '../utils/helpers.js'
 import { sendFollowUpViaCloudApi, isFollowUpApiConfigured } from '../utils/whatsappCloudApi.js'
 
@@ -402,7 +404,7 @@ function DueTab({ dueClients }) {
                       )}
                     </div>
                     <p className="text-xs text-muted flex items-center gap-1 mt-0.5">
-                      <Phone size={11} /> {c.phone} · Last visit {formatDate(c.lastVisit)}
+                      <Phone size={11} /> {formatPhoneDisplay(c.phone)} · Last visit {formatDate(c.lastVisit)}
                     </p>
                     <p className="text-xs text-muted mt-1.5 italic line-clamp-2">{message}</p>
                   </div>
@@ -488,7 +490,7 @@ function SendQueueModal({ open, onClose, clients, template, onDone }) {
           </p>
           <div className="p-4 rounded-lg bg-black/[0.02] border border-black/5 mb-4">
             <p className="text-sm font-semibold text-ink">{client.name}</p>
-            <p className="text-xs text-muted mb-3">{client.phone}</p>
+            <p className="text-xs text-muted mb-3">{formatPhoneDisplay(client.phone)}</p>
             <p className="text-sm text-ink whitespace-pre-wrap">{message}</p>
           </div>
           <div className="flex items-center justify-between gap-2">
@@ -608,7 +610,7 @@ function TemplatesTab() {
         <div className="space-y-3">
           <div>
             <label className="label">Template name</label>
-            <input className="input" value={form.name} onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))} autoFocus />
+            <input className="input" value={form.name} onChange={(e) => setForm((s) => ({ ...s, name: capitalizeWordsPreserveSpaces(e.target.value) }))} autoFocus />
           </div>
           <div>
             <label className="label">Message</label>

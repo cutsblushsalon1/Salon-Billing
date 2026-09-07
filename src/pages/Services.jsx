@@ -240,7 +240,7 @@ export default function Services() {
             <input
               className="input"
               value={form.name}
-              onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))}
+              onChange={(e) => setForm((s) => ({ ...s, name: capitalizeWordsPreserveSpaces(e.target.value) }))}
               autoFocus
             />
           </div>
@@ -252,7 +252,7 @@ export default function Services() {
                 placeholder="Hair, Skin, Nails…"
                 value={form.category}
                 onChange={(e) =>
-                  setForm((s) => ({ ...s, category: e.target.value }))
+                  setForm((s) => ({ ...s, category: capitalizeWordsPreserveSpaces(e.target.value) }))
                 }
               />
             </div>

@@ -23,6 +23,7 @@ import {
   matchesCatalogQuery,
   uid,
   capitalizeWordsPreserveSpaces,
+  formatPhoneDisplay,
 } from '../utils/helpers.js'
 
 const TABS = [
@@ -159,7 +160,7 @@ export default function Memberships() {
     if (!planForm.name.trim() || !planForm.price) return
     upsertMembershipPlan({
       id: editingPlanId || uid('plan'),
-      name: planForm.name,
+      name: capitalizeWordsPreserveSpaces(planForm.name),
       price: Number(planForm.price),
       validityMonths: Number(planForm.validityMonths) || 1,
       discountPercentService: Number(planForm.discountPercentService) || 0,
@@ -485,7 +486,7 @@ export default function Memberships() {
         <div className="space-y-3">
           <div>
             <label className="label">Plan name</label>
-            <input className="input" value={planForm.name} onChange={(e) => setPlanForm((s) => ({ ...s, name: e.target.value }))} autoFocus />
+            <input className="input" value={planForm.name} onChange={(e) => setPlanForm((s) => ({ ...s, name: capitalizeWordsPreserveSpaces(e.target.value) }))} autoFocus />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -726,7 +727,7 @@ export default function Memberships() {
                     className="w-full flex items-center gap-2 px-3 py-2 hover:bg-black/[0.03] text-left text-sm"
                   >
                     <span className="font-medium text-ink">{c.name}</span>
-                    <span className="text-xs text-muted ml-auto">{c.phone}</span>
+                    <span className="text-xs text-muted ml-auto">{formatPhoneDisplay(c.phone)}</span>
                   </button>
                 ))}
               </div>
@@ -739,16 +740,21 @@ export default function Memberships() {
               <input
                 className="input"
                 value={enrollForm.name}
-                onChange={(e) => setEnrollForm((s) => ({ ...s, name: e.target.value }))}
+                onChange={(e) => setEnrollForm((s) => ({ ...s, name: capitalizeWordsPreserveSpaces(e.target.value) }))}
               />
             </div>
             <div>
               <label className="label">Contact number</label>
-              <input
-                className="input"
-                value={enrollForm.phone}
-                onChange={(e) => setEnrollForm((s) => ({ ...s, phone: e.target.value }))}
-              />
+              <div className="relative">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-muted font-medium pointer-events-none">
+                  +91
+                </span>
+                <input
+                  className="input pl-12"
+                  value={enrollForm.phone}
+                  onChange={(e) => setEnrollForm((s) => ({ ...s, phone: e.target.value.replace(/[^0-9]/g, '').slice(0, 10) }))}
+                />
+              </div>
             </div>
           </div>
 

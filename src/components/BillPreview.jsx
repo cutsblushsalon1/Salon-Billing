@@ -1,7 +1,7 @@
 import React from 'react'
 import { createPortal } from 'react-dom'
 import { Scissors } from 'lucide-react'
-import { formatCurrency, formatDate, calcLineTotal, getBillStaffNames } from '../utils/helpers.js'
+import { formatCurrency, formatDate, calcLineTotal, getBillStaffNames, formatPhoneDisplay } from '../utils/helpers.js'
 
 export function InvoiceLayout({ bill, settings }) {
   const staffNames = getBillStaffNames(bill)
@@ -29,7 +29,7 @@ export function InvoiceLayout({ bill, settings }) {
         <div>
           <p className="text-muted mb-1 uppercase tracking-wide text-[10px]">Billed to</p>
           <p className="font-semibold text-ink text-sm">{bill.client?.name || 'Walk-in Customer'}</p>
-          {bill.client?.phone && <p className="text-muted mt-0.5">{bill.client.phone}</p>}
+          {bill.client?.phone && <p className="text-muted mt-0.5">{formatPhoneDisplay(bill.client.phone)}</p>}
         </div>
         <div className="text-right">
           <p className="text-muted mb-1 uppercase tracking-wide text-[10px]">Details</p>

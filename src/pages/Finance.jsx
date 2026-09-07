@@ -27,7 +27,7 @@ import {
 } from 'recharts'
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, StatCard, EmptyState } from '../components/ui.jsx'
-import { formatCurrency, formatDate, isInRange, isSameMonth } from '../utils/helpers.js'
+import { formatCurrency, formatDate, isInRange, isSameMonth, capitalizeWordsPreserveSpaces } from '../utils/helpers.js'
 
 const CATEGORIES = [
   'Rent',
@@ -353,7 +353,7 @@ export default function Finance() {
             </div>
             <div className="lg:col-span-1">
               <label className="label">Description</label>
-              <input className="input" required placeholder="e.g. Monthly rent" value={form.description} onChange={(e) => setForm((s) => ({ ...s, description: e.target.value }))} />
+              <input className="input" required placeholder="e.g. Monthly rent" value={form.description} onChange={(e) => setForm((s) => ({ ...s, description: capitalizeWordsPreserveSpaces(e.target.value) }))} />
             </div>
             <div>
               <label className="label">Amount</label>
@@ -371,7 +371,7 @@ export default function Finance() {
           </div>
           <div className="mt-3">
             <label className="label">Notes (optional)</label>
-            <input className="input" placeholder="Optional details" value={form.notes} onChange={(e) => setForm((s) => ({ ...s, notes: e.target.value }))} />
+            <input className="input" placeholder="Optional details" value={form.notes} onChange={(e) => setForm((s) => ({ ...s, notes: capitalizeWordsPreserveSpaces(e.target.value) }))} />
           </div>
           <div className="flex justify-end mt-4">
             <button className="btn-primary" type="submit">{editingExpenseId ? <Pencil size={15} /> : <Plus size={15} />} {editingExpenseId ? 'Update expense' : 'Save expense'}</button>

@@ -19,7 +19,7 @@ import {
 } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, Modal, EmptyState, Badge } from '../components/ui.jsx'
-import { formatCurrency, formatDate, uid, isSameMonth, calcBillItemRevenue } from '../utils/helpers.js'
+import { formatCurrency, formatDate, uid, isSameMonth, calcBillItemRevenue, capitalizeWordsPreserveSpaces, formatPhoneDisplay } from '../utils/helpers.js'
 import { downloadAttendanceExcel } from '../utils/excel.js'
 
 const emptyForm = {
@@ -147,8 +147,8 @@ export default function Staff() {
     if (!form.name.trim()) return
     upsertStaff({
       id: editingId || uid('stf'),
-      name: form.name,
-      role: form.role || 'Staff',
+      name: capitalizeWordsPreserveSpaces(form.name),
+      role: capitalizeWordsPreserveSpaces(form.role || 'Staff'),
       phone: form.phone,
       serviceCommissionPercent: Number(form.serviceCommissionPercent) || 0,
       productCommissionPercent: Number(form.productCommissionPercent) || 0,
@@ -228,7 +228,7 @@ export default function Staff() {
                         <div className="min-w-0">
                           <p className="font-semibold text-ink truncate">{s.name}</p>
                           <p className="text-xs text-muted flex items-center gap-1">
-                            <Phone size={11} /> {s.phone || '—'}
+                            <Phone size={11} /> {s.phone ? formatPhoneDisplay(s.phone) : '—'}
                           </p>
                         </div>
                       </div>
@@ -339,7 +339,7 @@ export default function Staff() {
         <div className="space-y-3">
           <div>
             <label className="label">Full name</label>
-            <input className="input" value={form.name} onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))} autoFocus />
+            <input className="input" value={form.name} onChange={(e) => setForm((s) => ({ ...s, name: capitalizeWordsPreserveSpaces(e.target.value) }))} autoFocus />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -348,12 +348,21 @@ export default function Staff() {
                 className="input"
                 placeholder="Stylist, Barber, Beautician…"
                 value={form.role}
-                onChange={(e) => setForm((s) => ({ ...s, role: e.target.value }))}
+                onChange={(e) => setForm((s) => ({ ...s, role: capitalizeWordsPreserveSpaces(e.target.value) }))}
               />
             </div>
             <div>
               <label className="label">Phone</label>
-              <input className="input" value={form.phone} onChange={(e) => setForm((s) => ({ ...s, phone: e.target.value }))} />
+              <div className="relative">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-muted font-medium pointer-events-none">
+                  +91
+                </span>
+                <input
+                  className="input pl-12"
+                  value={form.phone}
+                  onChange={(e) => setForm((s) => ({ ...s, phone: e.target.value.replace(/[^0-9]/g, '').slice(0, 10) }))}
+                />
+              </div>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">

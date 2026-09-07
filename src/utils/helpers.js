@@ -116,6 +116,18 @@ export function formatPhoneE164(phone) {
   return withCountry ? `+${withCountry}` : ''
 }
 
+// Renders any stored phone number (bare 10-digit local, unchanged) with
+// a +91 country code prefix wherever it's shown as read-only text -
+// client/staff lists, profiles, invoices. Storage itself stays a plain
+// 10-digit number (matching import/export, search, and the WhatsApp
+// helpers above); this only affects what's displayed.
+export function formatPhoneDisplay(phone) {
+  const cleanPhone = (phone || '').replace(/[^0-9]/g, '')
+  if (!cleanPhone) return ''
+  const withCountry = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone
+  return `+${withCountry}`
+}
+
 // Renders the invoice date the way the approved WhatsApp template
 // expects it, e.g. "3 Sept 2026" - day without a leading zero, unlike
 // formatDate() elsewhere in the app which pads it for table columns.

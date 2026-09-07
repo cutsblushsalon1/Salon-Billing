@@ -34,6 +34,7 @@ import {
   matchesCatalogQuery,
   uid,
   capitalizeWordsPreserveSpaces,
+  formatPhoneDisplay,
 } from '../utils/helpers.js'
 import { downloadBillPDF } from '../utils/pdf.js'
 
@@ -308,7 +309,7 @@ export default function NewBill() {
                           />
                         )}
                       </p>
-                      <p className="text-xs text-muted">{selectedClient.phone}</p>
+                      <p className="text-xs text-muted">{formatPhoneDisplay(selectedClient.phone)}</p>
                     </div>
                   </div>
                   <button onClick={() => setSelectedClient(null)} className="text-muted hover:text-danger p-1">
@@ -359,14 +360,19 @@ export default function NewBill() {
                     className="input"
                     placeholder="Full name"
                     value={newClient.name}
-                    onChange={(e) => setNewClient((s) => ({ ...s, name: e.target.value }))}
+                    onChange={(e) => setNewClient((s) => ({ ...s, name: capitalizeWordsPreserveSpaces(e.target.value) }))}
                   />
-                  <input
-                    className="input"
-                    placeholder="Phone number"
-                    value={newClient.phone}
-                    onChange={(e) => setNewClient((s) => ({ ...s, phone: e.target.value }))}
-                  />
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-muted font-medium pointer-events-none">
+                      +91
+                    </span>
+                    <input
+                      className="input pl-12"
+                      placeholder="Phone number"
+                      value={newClient.phone}
+                      onChange={(e) => setNewClient((s) => ({ ...s, phone: e.target.value.replace(/[^0-9]/g, '').slice(0, 10) }))}
+                    />
+                  </div>
                   <input
                     className="input"
                     placeholder="Email (optional)"
@@ -413,7 +419,7 @@ export default function NewBill() {
                             {c.name}
                             {isMember && <Crown size={12} className="text-brass-dark" />}
                           </span>
-                          <span className="text-xs text-muted ml-auto">{c.phone}</span>
+                          <span className="text-xs text-muted ml-auto">{formatPhoneDisplay(c.phone)}</span>
                         </button>
                       )
                     })}
