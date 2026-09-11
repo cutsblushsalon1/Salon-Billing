@@ -7,11 +7,14 @@ import EditBillModal from '../components/EditBillModal.jsx'
 import InvoiceWhatsAppButton from '../components/InvoiceWhatsAppButton.jsx'
 import { formatCurrency, formatDateTime, isInRange, getBillStaffNames, formatPhoneDisplay } from '../utils/helpers.js'
 import { downloadBillPDF } from '../utils/pdf.js'
+import { can } from '../utils/permissions.js'
 
 const PAYMENT_FILTERS = ['All', 'Cash', 'Card', 'UPI', 'Wallet']
 
 export default function BillingHistory() {
-  const { bills, settings, deleteBill } = useApp()
+  const { bills, settings, deleteBill, role } = useApp()
+  const canEditBill = can(role, 'bill.edit')
+  const canDeleteBill = can(role, 'bill.delete')
   const [query, setQuery] = useState('')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
@@ -134,16 +137,20 @@ export default function BillingHistory() {
                         <button onClick={() => setViewBill(b)} className="p-1.5 text-muted hover:text-plum" title="View">
                           <Eye size={15} />
                         </button>
-                        <button onClick={() => setEditBill(b)} className="p-1.5 text-muted hover:text-plum" title="Edit">
-                          <Pencil size={15} />
-                        </button>
+                        {canEditBill && (
+                          <button onClick={() => setEditBill(b)} className="p-1.5 text-muted hover:text-plum" title="Edit">
+                            <Pencil size={15} />
+                          </button>
+                        )}
                         <button onClick={() => downloadBillPDF(b, settings)} className="p-1.5 text-muted hover:text-plum" title="Download PDF">
                           <Download size={15} />
                         </button>
                         <InvoiceWhatsAppButton bill={b} settings={settings} variant="icon" />
-                        <button onClick={() => setConfirmDelete(b)} className="p-1.5 text-muted hover:text-danger" title="Delete">
-                          <Trash2 size={15} />
-                        </button>
+                        {canDeleteBill && (
+                          <button onClick={() => setConfirmDelete(b)} className="p-1.5 text-muted hover:text-danger" title="Delete">
+                            <Trash2 size={15} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -168,15 +175,17 @@ export default function BillingHistory() {
               <button onClick={() => downloadBillPDF(viewBill, settings)} className="btn-ghost">
                 <Download size={15} /> Download PDF
               </button>
-              <button
-                onClick={() => {
-                  setEditBill(viewBill)
-                  setViewBill(null)
-                }}
-                className="btn-ghost"
-              >
-                <Pencil size={15} /> Edit bill
-              </button>
+              {canEditBill && (
+                <button
+                  onClick={() => {
+                    setEditBill(viewBill)
+                    setViewBill(null)
+                  }}
+                  className="btn-ghost"
+                >
+                  <Pencil size={15} /> Edit bill
+                </button>
+              )}
               <InvoiceWhatsAppButton bill={viewBill} settings={settings} />
             </div>
           </div>

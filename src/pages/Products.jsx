@@ -4,11 +4,13 @@ import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, Modal, EmptyState, Badge } from '../components/ui.jsx'
 import { formatCurrency, uid, capitalizeWordsPreserveSpaces } from '../utils/helpers.js'
 import { downloadCatalogExcel } from '../utils/excel.js'
+import { can } from '../utils/permissions.js'
 
 const emptyForm = { name: '', category: '', price: '', stock: '', lowStockAt: '5' }
 
 export default function Products() {
-  const { services, products, settings, upsertProduct, deleteProduct, adjustStock } = useApp()
+  const { services, products, settings, upsertProduct, deleteProduct, adjustStock, role } = useApp()
+  const canDelete = can(role, 'product.delete')
   const [query, setQuery] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [editingId, setEditingId] = useState(null)
@@ -126,9 +128,11 @@ export default function Products() {
                           <button onClick={() => openEdit(p)} className="p-1.5 text-muted hover:text-plum">
                             <Pencil size={15} />
                           </button>
-                          <button onClick={() => setConfirmDelete(p)} className="p-1.5 text-muted hover:text-danger">
-                            <Trash2 size={15} />
-                          </button>
+                          {canDelete && (
+                            <button onClick={() => setConfirmDelete(p)} className="p-1.5 text-muted hover:text-danger">
+                              <Trash2 size={15} />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

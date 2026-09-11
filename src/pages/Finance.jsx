@@ -28,6 +28,7 @@ import {
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, StatCard, EmptyState } from '../components/ui.jsx'
 import { formatCurrency, formatDate, isInRange, isSameMonth, capitalizeWordsPreserveSpaces } from '../utils/helpers.js'
+import { can } from '../utils/permissions.js'
 
 const CATEGORIES = [
   'Rent',
@@ -74,7 +75,7 @@ function previousRange(startDate, endDate) {
 }
 
 export default function Finance() {
-  const { bills, expenses, addExpense, updateExpense, deleteExpense, settings, updateSettings } = useApp()
+  const { bills, expenses, addExpense, updateExpense, deleteExpense, settings, updateSettings, role } = useApp()
   const currency = settings.currencySymbol || '₹'
 
   const [startDate, setStartDate] = useState('')
@@ -493,11 +494,13 @@ export default function Finance() {
                         <button className="p-2 rounded-lg text-muted hover:text-ink hover:bg-black/5" title="Edit expense" onClick={() => startEditExpense(expense)}>
                           <Pencil size={15} />
                         </button>
-                        <button className="p-2 rounded-lg text-muted hover:text-danger hover:bg-danger/5" title="Delete expense" onClick={() => {
-                          if (window.confirm(`Delete this ${formatCurrency(expense.amount, currency)} expense?`)) deleteExpense(expense.id)
-                        }}>
-                          <Trash2 size={15} />
-                        </button>
+                        {can(role, 'expense.delete') && (
+                          <button className="p-2 rounded-lg text-muted hover:text-danger hover:bg-danger/5" title="Delete expense" onClick={() => {
+                            if (window.confirm(`Delete this ${formatCurrency(expense.amount, currency)} expense?`)) deleteExpense(expense.id)
+                          }}>
+                            <Trash2 size={15} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

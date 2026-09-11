@@ -18,6 +18,7 @@ import { useApp } from "../context/AppContext.jsx";
 import { PageHeader, Modal, EmptyState, Badge } from "../components/ui.jsx";
 import { formatCurrency, formatDate, uid, capitalizeWordsPreserveSpaces, formatPhoneDisplay } from "../utils/helpers.js";
 import { downloadClientsExcel } from "../utils/excel.js";
+import { can } from "../utils/permissions.js";
 
 // Accepts common header spellings from exported spreadsheets, case-insensitive
 const HEADER_ALIASES = {
@@ -53,7 +54,8 @@ const emptyForm = {
 };
 
 export default function Clients() {
-  const { clients, settings, upsertClient, deleteClient } = useApp();
+  const { clients, settings, upsertClient, deleteClient, role } = useApp();
+  const canDelete = can(role, 'client.delete');
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
@@ -294,12 +296,14 @@ export default function Clients() {
                 >
                   <Pencil size={14} />
                 </button>
-                <button
-                  onClick={() => setConfirmDelete(c)}
-                  className="pl-2 text-muted hover:text-danger"
-                >
-                  <Trash2 size={14} />
-                </button>
+                {canDelete && (
+                  <button
+                    onClick={() => setConfirmDelete(c)}
+                    className="pl-2 text-muted hover:text-danger"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
               </div>
             </div>
           ))}

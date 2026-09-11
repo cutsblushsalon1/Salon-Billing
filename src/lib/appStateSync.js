@@ -16,6 +16,7 @@ export const SYNC_KEYS = [
   'settings',
   'membershipPlans',
   'clientMemberships',
+  'userRoles',
 ]
 
 // Fetches every synced collection in one query. Returns {} if Supabase isn't

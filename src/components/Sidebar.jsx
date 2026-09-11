@@ -17,26 +17,28 @@ import {
   Wallet,
 } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
+import { hasPageAccess, ROLE_LABELS } from '../utils/permissions.js'
 
 const NAV_ITEMS = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/new-bill', label: 'New Bill', icon: Receipt },
-  { to: '/appointments', label: 'Appointments', icon: CalendarClock, badgeKey: 'pendingAppointments' },
-  { to: '/history', label: 'Billing History', icon: History },
-  { to: '/clients', label: 'Clients', icon: Users },
-  { to: '/memberships', label: 'Memberships', icon: Crown },
-  { to: '/staff', label: 'Staff', icon: Users2 },
-  { to: '/follow-ups', label: 'Follow-ups', icon: AlarmClock },
-  { to: '/reports', label: 'Reports', icon: BarChart3 },
-  { to: '/finance', label: 'Finance & Profit', icon: Wallet },
-  { to: '/services', label: 'Services', icon: Scissors },
-  { to: '/products', label: 'Products', icon: Package },
-  { to: '/settings', label: 'Settings', icon: SettingsIcon },
+  { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true, page: 'dashboard' },
+  { to: '/new-bill', label: 'New Bill', icon: Receipt, page: 'new-bill' },
+  { to: '/appointments', label: 'Appointments', icon: CalendarClock, badgeKey: 'pendingAppointments', page: 'appointments' },
+  { to: '/history', label: 'Billing History', icon: History, page: 'history' },
+  { to: '/clients', label: 'Clients', icon: Users, page: 'clients' },
+  { to: '/memberships', label: 'Memberships', icon: Crown, page: 'memberships' },
+  { to: '/staff', label: 'Staff', icon: Users2, page: 'staff' },
+  { to: '/follow-ups', label: 'Follow-ups', icon: AlarmClock, page: 'follow-ups' },
+  { to: '/reports', label: 'Reports', icon: BarChart3, page: 'reports' },
+  { to: '/finance', label: 'Finance & Profit', icon: Wallet, page: 'finance' },
+  { to: '/services', label: 'Services', icon: Scissors, page: 'services' },
+  { to: '/products', label: 'Products', icon: Package, page: 'products' },
+  { to: '/settings', label: 'Settings', icon: SettingsIcon, page: 'settings' },
 ]
 
 export default function Sidebar({ onNavigate }) {
-  const { appointments } = useApp()
+  const { appointments, role } = useApp()
   const pendingAppointments = appointments.filter((a) => a.status === 'pending').length
+  const visibleItems = NAV_ITEMS.filter((item) => hasPageAccess(role, item.page))
 
   return (
     <div className="flex flex-col h-full bg-ink text-cream">
@@ -51,7 +53,7 @@ export default function Sidebar({ onNavigate }) {
       </div>
 
       <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
-        {NAV_ITEMS.map(({ to, label, icon: Icon, end, badgeKey }) => (
+        {visibleItems.map(({ to, label, icon: Icon, end, badgeKey }) => (
           <NavLink
             key={to}
             to={to}
@@ -76,11 +78,10 @@ export default function Sidebar({ onNavigate }) {
         ))}
       </nav>
 
-      <div className="px-6 py-5 border-t border-cream/10">
-        <div className="flex items-center gap-2 text-brass/80 text-xs">
-          <Sparkles size={13} />
-          <span>Built for chair-side speed</span>
-        </div>
+      <div className="px-6 py-4 border-t border-cream/10">
+        <span className="inline-block text-[10px] uppercase tracking-[0.15em] font-semibold bg-cream/10 text-cream/70 rounded-full px-2.5 py-1">
+          {ROLE_LABELS[role] || role} role
+        </span>
       </div>
     </div>
   )

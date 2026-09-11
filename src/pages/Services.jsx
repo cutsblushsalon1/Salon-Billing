@@ -18,6 +18,7 @@ import {
   capitalizeWordsPreserveSpaces,
 } from "../utils/helpers.js";
 import { downloadCatalogExcel } from "../utils/excel.js";
+import { can } from "../utils/permissions.js";
 
 const emptyForm = {
   name: "",
@@ -39,8 +40,9 @@ const CATEGORY_TONES = {
 };
 
 export default function Services() {
-  const { services, products, settings, upsertService, deleteService } =
+  const { services, products, settings, upsertService, deleteService, role } =
     useApp();
+  const canDelete = can(role, "service.delete");
   const [query, setQuery] = useState("");
   const [comboQuery, setComboQuery] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
@@ -213,12 +215,14 @@ export default function Services() {
                         >
                           <Pencil size={15} />
                         </button>
-                        <button
-                          onClick={() => setConfirmDelete(s)}
-                          className="p-1.5 text-muted hover:text-danger"
-                        >
-                          <Trash2 size={15} />
-                        </button>
+                        {canDelete && (
+                          <button
+                            onClick={() => setConfirmDelete(s)}
+                            className="p-1.5 text-muted hover:text-danger"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

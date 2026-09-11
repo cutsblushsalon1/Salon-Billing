@@ -13,6 +13,7 @@ import {
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, Modal, EmptyState, Badge, StatCard } from '../components/ui.jsx'
 import MembershipWhatsAppButton from '../components/MembershipWhatsAppButton.jsx'
+import { can } from '../utils/permissions.js'
 import {
   formatCurrency,
   formatDate,
@@ -66,7 +67,9 @@ export default function Memberships() {
     enrollMembership,
     renewMembership,
     deleteMembership,
+    role,
   } = useApp()
+  const canManagePlans = can(role, 'membership.manage')
 
   const [tab, setTab] = useState('members')
   const [query, setQuery] = useState('')
@@ -274,11 +277,11 @@ export default function Memberships() {
             <button className="btn-primary" onClick={openEnroll} disabled={membershipPlans.length === 0}>
               <Plus size={16} /> Enroll Member
             </button>
-          ) : (
+          ) : canManagePlans ? (
             <button className="btn-primary" onClick={openAddPlan}>
               <Plus size={16} /> Add Plan
             </button>
-          )
+          ) : null
         }
       />
 
@@ -381,9 +384,11 @@ export default function Memberships() {
                             <button onClick={() => setRenewTarget(m)} className="p-1.5 text-muted hover:text-plum" title="Renew">
                               <RefreshCw size={15} />
                             </button>
-                            <button onClick={() => setConfirmDeleteMember(m)} className="p-1.5 text-muted hover:text-danger" title="Remove">
-                              <Trash2 size={15} />
-                            </button>
+                            {canManagePlans && (
+                              <button onClick={() => setConfirmDeleteMember(m)} className="p-1.5 text-muted hover:text-danger" title="Remove">
+                                <Trash2 size={15} />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -402,9 +407,11 @@ export default function Memberships() {
               title="No membership plans"
               subtitle="Create a plan to start enrolling clients."
               action={
-                <button className="btn-primary" onClick={openAddPlan}>
-                  <Plus size={16} /> Add Plan
-                </button>
+                canManagePlans ? (
+                  <button className="btn-primary" onClick={openAddPlan}>
+                    <Plus size={16} /> Add Plan
+                  </button>
+                ) : undefined
               }
             />
           ) : (
@@ -465,14 +472,16 @@ export default function Memberships() {
                         )}
                       </div>
                     )}
-                    <div className="flex items-center gap-2 mt-auto pt-3 border-t border-black/5">
-                      <button onClick={() => openEditPlan(p)} className="btn-ghost text-xs py-1.5 flex-1">
-                        <Pencil size={13} /> Edit
-                      </button>
-                      <button onClick={() => setConfirmDeletePlan(p)} className="btn-danger text-xs py-1.5 flex-1">
-                        <Trash2 size={13} /> Remove
-                      </button>
-                    </div>
+                    {canManagePlans && (
+                      <div className="flex items-center gap-2 mt-auto pt-3 border-t border-black/5">
+                        <button onClick={() => openEditPlan(p)} className="btn-ghost text-xs py-1.5 flex-1">
+                          <Pencil size={13} /> Edit
+                        </button>
+                        <button onClick={() => setConfirmDeletePlan(p)} className="btn-danger text-xs py-1.5 flex-1">
+                          <Trash2 size={13} /> Remove
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )
               })}

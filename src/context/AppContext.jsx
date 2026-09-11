@@ -7,6 +7,7 @@ import { supabase, isSupabaseConfigured } from '../lib/supabaseClient.js'
 import { fetchAppointments, updateAppointmentStatus, deleteAppointmentRemote, subscribeToAppointments } from '../utils/appointmentsSync.js'
 import { pushPublicCatalog } from '../utils/publicCatalogSync.js'
 import { requestNotificationPermission, notifyNewAppointment } from '../utils/appointmentAlerts.js'
+import { ROLES } from '../utils/permissions.js'
 
 const AppContext = createContext(null)
 
@@ -41,6 +42,7 @@ const STORAGE_KEYS = {
   settings: 'salon_settings',
   membershipPlans: 'salon_membership_plans',
   clientMemberships: 'salon_client_memberships',
+  userRoles: 'salon_user_roles',
 }
 
 export function AppProvider({ children }) {
@@ -89,6 +91,13 @@ export function AppProvider({ children }) {
   const [membershipPlans, setMembershipPlans] = useState(() => loadJSON(STORAGE_KEYS.membershipPlans, seedMembershipPlans))
   const [clientMemberships, setClientMemberships] = useState(() => loadJSON(STORAGE_KEYS.clientMemberships, []))
 
+  // ---- Roles ----
+  // List of { email, role } entries, managed by an admin from Settings →
+  // Team & Roles. Kept separate from Supabase Auth's user list (which the
+  // client can't safely read/write without a service-role key) - this is
+  // just a lookup table matching a signed-in email to a permission role.
+  const [userRoles, setUserRoles] = useState(() => loadJSON(STORAGE_KEYS.userRoles, []))
+
   // Appointments booked by customers on the salon's separate public website.
   // These live in their own Supabase table (not the app_state blob) so the
   // booking site can insert a new row any time without needing to read and
@@ -124,6 +133,7 @@ export function AppProvider({ children }) {
       if (remote.settings) setSettings(remote.settings)
       if (remote.membershipPlans) setMembershipPlans(remote.membershipPlans)
       if (remote.clientMemberships) setClientMemberships(remote.clientMemberships)
+      if (remote.userRoles) setUserRoles(remote.userRoles)
       setHydrated(true)
     })
     return () => {
@@ -236,6 +246,41 @@ export function AppProvider({ children }) {
     saveJSON(STORAGE_KEYS.clientMemberships, clientMemberships)
     if (hydrated) saveAppState('clientMemberships', clientMemberships)
   }, [clientMemberships, hydrated])
+  useEffect(() => {
+    saveJSON(STORAGE_KEYS.userRoles, userRoles)
+    if (hydrated) saveAppState('userRoles', userRoles)
+  }, [userRoles, hydrated])
+
+  // The signed-in user's permission role, looked up by email against the
+  // userRoles list above. Safety net: as long as NO ONE has been assigned
+  // the admin role yet, every signed-in account is treated as admin. This
+  // covers brand-new setups (list is empty) AND the case where someone
+  // adds a manager/staff entry before ever adding an admin entry - without
+  // this, that first entry would lock the person doing the assigning out
+  // of Settings, since their own unlisted email would fall back to staff.
+  // Once at least one admin entry exists, an unlisted email defaults to
+  // staff (least privilege) - safe, because an admin already exists who
+  // can add more people.
+  const hasAnyAdmin = React.useMemo(() => userRoles.some((r) => r.role === ROLES.ADMIN), [userRoles])
+  const role = React.useMemo(() => {
+    if (!user?.email) return ROLES.STAFF
+    if (!hasAnyAdmin) return ROLES.ADMIN
+    const match = userRoles.find((r) => r.email.toLowerCase() === user.email.toLowerCase())
+    return match?.role || ROLES.STAFF
+  }, [user, userRoles, hasAnyAdmin])
+
+  const upsertUserRole = useCallback((entry) => {
+    setUserRoles((prev) => {
+      const email = entry.email.trim().toLowerCase()
+      const exists = prev.find((r) => r.email.toLowerCase() === email)
+      if (exists) return prev.map((r) => (r.email.toLowerCase() === email ? { ...r, ...entry, email } : r))
+      return [...prev, { ...entry, email }]
+    })
+  }, [])
+
+  const removeUserRole = useCallback((email) => {
+    setUserRoles((prev) => prev.filter((r) => r.email.toLowerCase() !== email.toLowerCase()))
+  }, [])
 
   // Real sign-in against Supabase Auth. The user account itself has to
   // already exist (Supabase Dashboard -> Authentication -> Users -> Add
@@ -897,6 +942,10 @@ export function AppProvider({ children }) {
     login,
     logout,
     updateLogin,
+    role,
+    userRoles,
+    upsertUserRole,
+    removeUserRole,
     clients,
     upsertClient,
     findClientByPhone,

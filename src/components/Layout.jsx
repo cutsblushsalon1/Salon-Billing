@@ -3,10 +3,11 @@ import { useNavigate } from 'react-router-dom'
 import { Menu, X, LogOut, Plus } from 'lucide-react'
 import Sidebar from './Sidebar.jsx'
 import { useApp } from '../context/AppContext.jsx'
+import { ROLE_LABELS } from '../utils/permissions.js'
 
 export default function Layout({ children }) {
   const [mobileOpen, setMobileOpen] = useState(false)
-  const { logout, settings, user } = useApp()
+  const { logout, settings, user, role } = useApp()
   const navigate = useNavigate()
 
   return (
@@ -51,7 +52,10 @@ export default function Layout({ children }) {
                 <div className="w-8 h-8 rounded-full bg-plum text-cream flex items-center justify-center text-xs font-semibold">
                   {user?.email?.[0]?.toUpperCase() || 'A'}
                 </div>
-                <span className="text-sm font-medium text-ink">{user?.email}</span>
+                <div className="flex flex-col gap-1.5 leading-tight">
+                  <span className="text-sm font-medium leading-none text-ink block">{user?.email}</span>
+                  <span className="text-[10px] uppercase tracking-wide leading-none text-muted">{ROLE_LABELS[role] || role}</span>
+                </div>
               </div>
               <button
                 onClick={async () => {

@@ -33,6 +33,7 @@ import {
   capitalizeWordsPreserveSpaces,
 } from '../utils/helpers.js'
 import { sendFollowUpViaCloudApi, isFollowUpApiConfigured } from '../utils/whatsappCloudApi.js'
+import { can } from '../utils/permissions.js'
 
 const TABS = [
   { id: 'due', label: 'Due for follow-up', icon: Bell },
@@ -48,8 +49,10 @@ const TOKEN_HELP = [
 ]
 
 export default function FollowUps() {
-  const { clients, templates, followUps, settings, clientMemberships } = useApp()
+  const { clients, templates, followUps, settings, clientMemberships, role } = useApp()
   const [tab, setTab] = useState('due')
+  const canManageTemplates = can(role, 'followUp.templates.manage')
+  const visibleTabs = TABS.filter((t) => t.id !== 'templates' || canManageTemplates)
 
   const dueClients = useMemo(() => {
     if (!settings.followUpEnabled) return []
@@ -81,7 +84,7 @@ export default function FollowUps() {
       />
 
       <div className="flex items-center gap-2 mb-6 flex-wrap">
-        {TABS.map(({ id, label, icon: Icon }) => (
+        {visibleTabs.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             onClick={() => setTab(id)}
@@ -100,7 +103,7 @@ export default function FollowUps() {
       </div>
 
       {tab === 'due' && <DueTab dueClients={dueClients} />}
-      {tab === 'templates' && <TemplatesTab />}
+      {tab === 'templates' && canManageTemplates && <TemplatesTab />}
     </div>
   )
 }

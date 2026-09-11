@@ -18,9 +18,13 @@ import {
   Loader2,
   CircleCheck,
   CircleX,
+  UserCog,
+  Trash2,
+  Plus,
 } from "lucide-react";
 import { useApp } from "../context/AppContext.jsx";
 import { PageHeader, Modal } from "../components/ui.jsx";
+import { ROLE_OPTIONS, ROLE_LABELS } from "../utils/permissions.js";
 import {
   sendInvoiceViaCloudApi,
   sendMembershipViaCloudApi,
@@ -37,6 +41,10 @@ export default function Settings() {
     resetCatalogToDefaults,
     user,
     updateLogin,
+    role,
+    userRoles,
+    upsertUserRole,
+    removeUserRole,
     templates,
     publishServiceCatalog,
     publishStaffRoster,
@@ -44,6 +52,8 @@ export default function Settings() {
     services,
     staff,
   } = useApp();
+  const [roleForm, setRoleForm] = useState({ email: "", role: "staff" });
+  const [roleError, setRoleError] = useState("");
   const [form, setForm] = useState(settings);
   const [savedFlash, setSavedFlash] = useState(false);
   const [credForm, setCredForm] = useState({
@@ -228,6 +238,25 @@ export default function Settings() {
     setCredSaved(true);
     setCredForm((s) => ({ ...s, password: "" }));
     setTimeout(() => setCredSaved(false), 2000);
+  }
+
+  function handleAddRole() {
+    setRoleError("");
+    const email = roleForm.email.trim();
+    if (!email) {
+      setRoleError("Enter the email this person signs in with.");
+      return;
+    }
+    const existing = userRoles.find((r) => r.email.toLowerCase() === email.toLowerCase());
+    const otherAdmins = userRoles.filter(
+      (r) => r.role === "admin" && r.email.toLowerCase() !== email.toLowerCase(),
+    ).length;
+    if (existing?.role === "admin" && roleForm.role !== "admin" && otherAdmins === 0) {
+      setRoleError("Can't change the last Admin's role — add another Admin first.");
+      return;
+    }
+    upsertUserRole({ email, role: roleForm.role });
+    setRoleForm({ email: "", role: "staff" });
   }
 
   return (
@@ -1064,6 +1093,113 @@ Team ${form.salonName || "Cuts & Blush Unisex Salon"}`}
           </div>
         </section>
       </div>
+
+      {/* Team & Roles */}
+      <section className="card p-5 sm:p-6 mt-6">
+        <div className="flex items-center gap-2 mb-4">
+          <UserCog size={17} className="text-plum" />
+          <p className="font-display text-lg text-ink">Team &amp; roles</p>
+        </div>
+        <p className="text-sm text-muted mb-4">
+          Control what each signed-in account can do. Add the email address they sign in with (must already
+          exist as a Supabase Auth user — Authentication → Users) and pick a role.
+        </p>
+
+        <div className="rounded-lg bg-sand/50 px-3 py-3 text-xs text-ink mb-4 space-y-1">
+          {ROLE_OPTIONS.map((opt) => (
+            <p key={opt.value}>
+              <span className="font-semibold">{opt.label}:</span> {opt.description}
+            </p>
+          ))}
+        </div>
+
+        {!userRoles.some((r) => r.role === "admin") && (
+          <div className="flex items-start gap-2.5 p-3 rounded-lg bg-plum/5 text-xs text-ink mb-4">
+            <TriangleAlert size={15} className="text-plum mt-0.5 shrink-0" />
+            <p>
+              No one has been assigned the Admin role yet, so every signed-in account currently has full
+              Admin access. Add at least one Admin entry below (e.g. your own email) before assigning
+              Manager/Staff roles to others — otherwise you risk locking yourself out of Settings.
+            </p>
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-end gap-2 mb-4">
+          <div className="flex-1 min-w-[200px]">
+            <label className="label">Email</label>
+            <input
+              className="input"
+              type="email"
+              placeholder="person@salon.com"
+              value={roleForm.email}
+              onChange={(e) => setRoleForm((s) => ({ ...s, email: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="label">Role</label>
+            <select
+              className="input"
+              value={roleForm.role}
+              onChange={(e) => setRoleForm((s) => ({ ...s, role: e.target.value }))}
+            >
+              {ROLE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button onClick={handleAddRole} className="btn-primary">
+            <Plus size={15} /> Save
+          </button>
+        </div>
+        {roleError && <p className="text-sm text-danger mb-3">{roleError}</p>}
+
+        {userRoles.length > 0 && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-wide text-muted border-b border-black/5">
+                  <th className="py-2 pr-3">Email</th>
+                  <th className="py-2 pr-3">Role</th>
+                  <th className="py-2 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {userRoles.map((r) => {
+                  const isLastAdmin = r.role === "admin" && userRoles.filter((x) => x.role === "admin").length === 1
+                  return (
+                  <tr key={r.email} className="border-b border-black/5 last:border-0">
+                    <td className="py-2.5 pr-3 text-ink">
+                      {r.email}
+                      {user?.email?.toLowerCase() === r.email.toLowerCase() && (
+                        <span className="ml-2 text-[10px] uppercase tracking-wide text-brass-dark">you</span>
+                      )}
+                    </td>
+                    <td className="py-2.5 pr-3">{ROLE_LABELS[r.role] || r.role}</td>
+                    <td className="py-2.5 text-right">
+                      <button
+                        onClick={() => {
+                          if (isLastAdmin) {
+                            setRoleError("Can't remove the last Admin — add another Admin first.");
+                            return;
+                          }
+                          removeUserRole(r.email);
+                        }}
+                        className={`p-1.5 ${isLastAdmin ? "text-muted/40 cursor-not-allowed" : "text-muted hover:text-danger"}`}
+                        title={isLastAdmin ? "Can't remove the last Admin" : "Remove role assignment"}
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </td>
+                  </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       {/* Booking website sync */}
       <section className="card p-5 sm:p-6 mt-6">
