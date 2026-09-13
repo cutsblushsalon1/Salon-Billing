@@ -16,11 +16,15 @@ import {
   Scissors,
   Package,
   Crown,
+  HandCoins,
 } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, Modal, EmptyState, Badge } from '../components/ui.jsx'
 import { formatCurrency, formatDate, uid, isSameMonth, calcBillItemRevenue, capitalizeWordsPreserveSpaces, formatPhoneDisplay } from '../utils/helpers.js'
 import { downloadAttendanceExcel } from '../utils/excel.js'
+
+const ADVANCE_PAYMENT_METHODS = ['Cash', 'UPI', 'Card', 'Bank Transfer', 'Other']
+const emptyAdvanceForm = { staffId: '', amount: '', date: '', paymentMethod: 'Cash', note: '' }
 
 const emptyForm = {
   name: '',
@@ -41,16 +45,29 @@ function todayISO() {
 const TABS = [
   { id: 'team', label: 'Team', icon: Users2 },
   { id: 'attendance', label: 'Attendance', icon: ClipboardCheck },
+  { id: 'advances', label: 'Advances', icon: HandCoins },
 ]
 
 export default function Staff() {
-  const { staff, bills, settings, upsertStaff, deleteStaff, clientMemberships } = useApp()
+  const { staff, bills, settings, upsertStaff, deleteStaff, clientMemberships, staffAdvances, addStaffAdvance } = useApp()
   const [tab, setTab] = useState('team')
   const [query, setQuery] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const [form, setForm] = useState(emptyForm)
   const [confirmDelete, setConfirmDelete] = useState(null)
+  const [advanceModalOpen, setAdvanceModalOpen] = useState(false)
+  const [advanceForm, setAdvanceForm] = useState(emptyAdvanceForm)
+
+  // Total advance amount each staff member has been given, so it's visible
+  // right on their card without switching to the Advances tab.
+  const advanceTotalsByStaff = useMemo(() => {
+    const map = {}
+    staffAdvances.forEach((a) => {
+      map[a.staffId] = (map[a.staffId] || 0) + (Number(a.amount) || 0)
+    })
+    return map
+  }, [staffAdvances])
 
   const statsByStaff = useMemo(() => {
     const map = {}
@@ -161,6 +178,17 @@ export default function Staff() {
 
   function toggleActive(s) {
     upsertStaff({ ...s, active: !s.active })
+  }
+
+  function openGiveAdvance(staffId) {
+    setAdvanceForm({ ...emptyAdvanceForm, staffId: staffId || '', date: todayISO() })
+    setAdvanceModalOpen(true)
+  }
+
+  function handleSaveAdvance() {
+    if (!advanceForm.staffId || !(Number(advanceForm.amount) > 0)) return
+    addStaffAdvance(advanceForm)
+    setAdvanceModalOpen(false)
   }
 
   return (
@@ -308,6 +336,14 @@ export default function Staff() {
                       </div>
                       <div className="bg-black/[0.02] rounded-lg p-2.5">
                         <p className="text-muted mb-0.5 flex items-center gap-1">
+                          <HandCoins size={11} /> Advances given
+                        </p>
+                        <p className="font-semibold text-ink tabular">
+                          {formatCurrency(advanceTotalsByStaff[s.id] || 0, settings.currencySymbol)}
+                        </p>
+                      </div>
+                      <div className="bg-black/[0.02] rounded-lg p-2.5">
+                        <p className="text-muted mb-0.5 flex items-center gap-1">
                           <CalendarDays size={11} /> Joined
                         </p>
                         <p className="font-semibold text-ink">{s.joinedAt ? formatDate(s.joinedAt) : '—'}</p>
@@ -317,6 +353,9 @@ export default function Staff() {
                     <div className="flex items-center gap-2 mt-auto pt-3 border-t border-black/5">
                       <button onClick={() => toggleActive(s)} className="btn-ghost text-xs py-1.5 flex-1">
                         <Power size={13} /> {s.active ? 'Deactivate' : 'Activate'}
+                      </button>
+                      <button onClick={() => openGiveAdvance(s.id)} className="p-2 text-muted hover:text-brass" title="Give advance">
+                        <HandCoins size={14} />
                       </button>
                       <button onClick={() => openEdit(s)} className="p-2 text-muted hover:text-plum">
                         <Pencil size={14} />
@@ -334,6 +373,84 @@ export default function Staff() {
       )}
 
       {tab === 'attendance' && <AttendanceTab />}
+
+      {tab === 'advances' && <AdvancesTab onGiveAdvance={openGiveAdvance} />}
+
+      <Modal open={advanceModalOpen} onClose={() => setAdvanceModalOpen(false)} title="Give advance" size="sm">
+        <div className="space-y-3">
+          <div>
+            <label className="label">Staff member</label>
+            <select
+              className="input"
+              value={advanceForm.staffId}
+              onChange={(e) => setAdvanceForm((s) => ({ ...s, staffId: e.target.value }))}
+              autoFocus
+            >
+              <option value="">Select staff…</option>
+              {staff.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Amount ({settings.currencySymbol})</label>
+              <input
+                className="input"
+                type="number"
+                min="0"
+                value={advanceForm.amount}
+                onChange={(e) => setAdvanceForm((s) => ({ ...s, amount: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="label">Date</label>
+              <input
+                className="input"
+                type="date"
+                value={advanceForm.date}
+                onChange={(e) => setAdvanceForm((s) => ({ ...s, date: e.target.value }))}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="label">Payment method</label>
+            <select
+              className="input"
+              value={advanceForm.paymentMethod}
+              onChange={(e) => setAdvanceForm((s) => ({ ...s, paymentMethod: e.target.value }))}
+            >
+              {ADVANCE_PAYMENT_METHODS.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="label">Note (optional)</label>
+            <input
+              className="input"
+              placeholder="e.g. Requested for personal expense"
+              value={advanceForm.note}
+              onChange={(e) => setAdvanceForm((s) => ({ ...s, note: e.target.value }))}
+            />
+          </div>
+          <p className="text-xs text-muted">
+            This is also logged as a "Staff Advance" expense in Finance, so it's reflected in reports automatically.
+          </p>
+          <div className="flex items-center justify-end gap-2 pt-2">
+            <button onClick={() => setAdvanceModalOpen(false)} className="btn-ghost">
+              Cancel
+            </button>
+            <button onClick={handleSaveAdvance} className="btn-primary" disabled={!advanceForm.staffId || !(Number(advanceForm.amount) > 0)}>
+              Record advance
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editingId ? 'Edit staff' : 'Add staff'}>
         <div className="space-y-3">
@@ -543,6 +660,124 @@ function AttendanceTab() {
                       <td className="py-2.5 text-muted">{a.checkOut || '—'}</td>
                       <td className="py-2.5 text-right">
                         <button onClick={() => deleteAttendance(a.id)} className="p-1.5 text-muted hover:text-danger">
+                          <Trash2 size={14} />
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </div>
+  )
+}
+
+function AdvancesTab({ onGiveAdvance }) {
+  const { staff, staffAdvances, deleteStaffAdvance, settings } = useApp()
+  const [staffFilter, setStaffFilter] = useState('All')
+
+  const totalsByStaff = useMemo(() => {
+    const map = {}
+    staffAdvances.forEach((a) => {
+      map[a.staffId] = (map[a.staffId] || 0) + (Number(a.amount) || 0)
+    })
+    return map
+  }, [staffAdvances])
+
+  const staffWithAdvances = staff.filter((s) => totalsByStaff[s.id] > 0)
+
+  const filteredLog = useMemo(() => {
+    return [...staffAdvances]
+      .filter((a) => staffFilter === 'All' || a.staffId === staffFilter)
+      .sort((a, b) => new Date(b.date) - new Date(a.date))
+  }, [staffAdvances, staffFilter])
+
+  const recentLog = filteredLog.slice(0, 25)
+
+  return (
+    <div className="space-y-6">
+      {/* Give an advance */}
+      <section className="card p-5 sm:p-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <p className="font-display text-lg text-ink">Give an advance</p>
+            <p className="text-xs text-muted mt-0.5">Record an advance payment against a staff member's upcoming salary.</p>
+          </div>
+          <button className="btn-primary shrink-0" onClick={() => onGiveAdvance('')}>
+            <HandCoins size={16} /> Give advance
+          </button>
+        </div>
+      </section>
+
+      {/* Outstanding totals per staff */}
+      {staffWithAdvances.length > 0 && (
+        <section className="card p-5 sm:p-6">
+          <p className="font-display text-lg text-ink mb-4">Advances given, by staff</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+            {staffWithAdvances.map((s) => (
+              <div key={s.id} className="bg-black/[0.02] rounded-lg p-3 flex items-center justify-between">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-full bg-plum text-cream flex items-center justify-center text-xs font-semibold shrink-0">
+                    {s.name[0]?.toUpperCase()}
+                  </div>
+                  <p className="text-sm font-medium text-ink truncate">{s.name}</p>
+                </div>
+                <p className="text-sm font-semibold text-ink tabular shrink-0">{formatCurrency(totalsByStaff[s.id], settings.currencySymbol)}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* History */}
+      <section className="card p-5 sm:p-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+          <p className="font-display text-lg text-ink">Advance history</p>
+          <select className="input sm:w-52" value={staffFilter} onChange={(e) => setStaffFilter(e.target.value)}>
+            <option value="All">All staff</option>
+            {staff.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        {filteredLog.length > 25 && (
+          <p className="text-xs text-muted mb-3">
+            Showing the most recent 25 of {filteredLog.length} records.
+          </p>
+        )}
+
+        {recentLog.length === 0 ? (
+          <EmptyState icon={HandCoins} title="No advances recorded yet" subtitle="Use “Give advance” above to log one." />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-xs uppercase tracking-wide text-muted">
+                <tr>
+                  <th className="text-left py-2 font-semibold">Staff</th>
+                  <th className="text-left py-2 font-semibold">Date</th>
+                  <th className="text-left py-2 font-semibold">Method</th>
+                  <th className="text-left py-2 font-semibold">Note</th>
+                  <th className="text-right py-2 font-semibold">Amount</th>
+                  <th className="text-right py-2 font-semibold">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-black/5">
+                {recentLog.map((a) => {
+                  const member = staff.find((s) => s.id === a.staffId)
+                  return (
+                    <tr key={a.id}>
+                      <td className="py-2.5 font-medium text-ink">{member?.name || 'Removed staff'}</td>
+                      <td className="py-2.5 text-muted">{formatDate(a.date)}</td>
+                      <td className="py-2.5 text-muted">{a.paymentMethod || '—'}</td>
+                      <td className="py-2.5 text-muted">{a.note || '—'}</td>
+                      <td className="py-2.5 text-right font-semibold text-ink tabular">{formatCurrency(a.amount, settings.currencySymbol)}</td>
+                      <td className="py-2.5 text-right">
+                        <button onClick={() => deleteStaffAdvance(a.id)} className="p-1.5 text-muted hover:text-danger">
                           <Trash2 size={14} />
                         </button>
                       </td>

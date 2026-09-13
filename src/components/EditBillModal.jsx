@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react'
 import { Search, Plus, Minus, Trash2, Scissors, Package, Save, TriangleAlert } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { Modal } from './ui.jsx'
-import { calcBillTotals, calcLineTotal, formatCurrency, matchesCatalogQuery, getComboServiceNames , capitalizeWordsPreserveSpaces } from '../utils/helpers.js'
+import { calcBillTotals, calcLineTotal, isNoDiscountCategory, formatCurrency, matchesCatalogQuery, getComboServiceNames , capitalizeWordsPreserveSpaces } from '../utils/helpers.js'
 
 const PAYMENT_METHODS = ['Cash', 'Card', 'UPI', 'Wallet']
 
@@ -43,6 +43,7 @@ export default function EditBillModal({ bill, open, onClose }) {
           type,
           name: item.name,
           price: item.price,
+          category: item.category || '',
           qty: 1,
           discountPercent: 0,
           staffId: '',
@@ -62,7 +63,11 @@ export default function EditBillModal({ bill, open, onClose }) {
 
   function updateDiscount(refId, type, value) {
     const clamped = Math.max(0, Math.min(100, Number(value) || 0))
-    setItems((prev) => prev.map((c) => (c.refId === refId && c.type === type ? { ...c, discountPercent: clamped } : c)))
+    setItems((prev) =>
+      prev.map((c) =>
+        c.refId === refId && c.type === type && !isNoDiscountCategory(c.category) ? { ...c, discountPercent: clamped } : c,
+      ),
+    )
   }
 
   function updateStaff(refId, type, staffId) {
@@ -217,16 +222,22 @@ export default function EditBillModal({ bill, open, onClose }) {
                       </select>
                       <div className="flex items-center gap-1.5">
                         <label className="text-[11px] text-muted whitespace-nowrap">Discount</label>
-                        <input
-                          type="number"
-                          min="0"
-                          max="100"
-                          value={it.discountPercent || ''}
-                          onChange={(e) => updateDiscount(it.refId, it.type, e.target.value)}
-                          placeholder="0"
-                          className="w-full rounded-md border border-black/10 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brass/60 focus:border-brass"
-                        />
-                        <span className="text-[11px] text-muted">%</span>
+                        {isNoDiscountCategory(it.category) ? (
+                          <span className="text-[11px] text-muted italic">Not applicable (combo)</span>
+                        ) : (
+                          <>
+                            <input
+                              type="number"
+                              min="0"
+                              max="100"
+                              value={it.discountPercent || ''}
+                              onChange={(e) => updateDiscount(it.refId, it.type, e.target.value)}
+                              placeholder="0"
+                              className="w-full rounded-md border border-black/10 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brass/60 focus:border-brass"
+                            />
+                            <span className="text-[11px] text-muted">%</span>
+                          </>
+                        )}
                       </div>
                     </div>
                     <p className="text-xs tabular text-right mt-1.5">
@@ -304,6 +315,9 @@ export default function EditBillModal({ bill, open, onClose }) {
               onChange={(e) => setDiscountValue(e.target.value)}
             />
           </div>
+          {discountType !== 'none' && items.some((it) => isNoDiscountCategory(it.category)) && (
+            <p className="text-[11px] text-muted -mt-1.5">This won't be applied to Special Combo items — they're already discounted.</p>
+          )}
           <div>
             <label className="label">Tax %</label>
             <input className="input" type="number" min="0" value={taxPercent} onChange={(e) => setTaxPercent(e.target.value)} />

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import { seedServices, seedProducts, seedStaff, seedTemplates, seedMembershipPlans, defaultSettings } from '../data/seed.js'
-import { uid, buildInvoiceNumber } from '../utils/helpers.js'
+import { uid, buildInvoiceNumber, formatCurrency } from '../utils/helpers.js'
 import { pushInvoiceToSupabase } from '../utils/invoiceSync.js'
 import { fetchAppState, fetchAppStateKey, saveAppState } from '../lib/appStateSync.js'
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient.js'
@@ -39,6 +39,7 @@ const STORAGE_KEYS = {
   followUps: 'salon_followups',
   bills: 'salon_bills',
   expenses: 'salon_expenses',
+  staffAdvances: 'salon_staff_advances',
   settings: 'salon_settings',
   membershipPlans: 'salon_membership_plans',
   clientMemberships: 'salon_client_memberships',
@@ -82,6 +83,10 @@ export function AppProvider({ children }) {
   const [followUps, setFollowUps] = useState(() => loadJSON(STORAGE_KEYS.followUps, []))
   const [bills, setBills] = useState(() => loadJSON(STORAGE_KEYS.bills, []))
   const [expenses, setExpenses] = useState(() => loadJSON(STORAGE_KEYS.expenses, []))
+  // Advance payments given to staff against future salary. Each entry also
+  // has a linked expense (see addStaffAdvance) so cash-out reporting
+  // already accounts for it.
+  const [staffAdvances, setStaffAdvances] = useState(() => loadJSON(STORAGE_KEYS.staffAdvances, []))
   // Merge over defaultSettings (not just fall back to it) so a
   // returning user's older localStorage blob - saved before newer
   // settings fields existed (e.g. the invoice WhatsApp API options)
@@ -130,6 +135,7 @@ export function AppProvider({ children }) {
       if (remote.followUps) setFollowUps(remote.followUps)
       if (remote.bills) setBills(remote.bills)
       if (remote.expenses) setExpenses(remote.expenses)
+      if (remote.staffAdvances) setStaffAdvances(remote.staffAdvances)
       if (remote.settings) setSettings(remote.settings)
       if (remote.membershipPlans) setMembershipPlans(remote.membershipPlans)
       if (remote.clientMemberships) setClientMemberships(remote.clientMemberships)
@@ -221,6 +227,13 @@ export function AppProvider({ children }) {
     // below, not by blindly saving the local array. This prevents stale devices
     // from overwriting shared expense records.
   }, [expenses])
+  useEffect(() => {
+    saveJSON(STORAGE_KEYS.staffAdvances, staffAdvances)
+    // Same reasoning as expenses above: remote writes go through the
+    // fetch-merge-write flow in addStaffAdvance/deleteStaffAdvance instead
+    // of a blind overwrite here, so two devices recording advances around
+    // the same time don't clobber each other's entries.
+  }, [staffAdvances])
   useEffect(() => {
     saveJSON(STORAGE_KEYS.bills, bills)
     // NOTE: deliberately NOT calling saveAppState('bills', bills) here.
@@ -599,15 +612,29 @@ export function AppProvider({ children }) {
 
     if (settings.autoSalaryExpensesEnabled !== false && today.getDate() >= clampDay(settings.autoSalaryExpenseDay)) {
       staff.filter((s) => s.active !== false && Number(s.salary) > 0).forEach((s) => {
+        // Net off any advances already given to this staff member this
+        // month, so the automatic salary expense doesn't double-count cash
+        // that already went out the door as an advance.
+        const advancesThisMonth = staffAdvances
+          .filter((a) => a.staffId === s.id)
+          .filter((a) => {
+            const d = new Date(a.date)
+            return d.getFullYear() === year && d.getMonth() === month
+          })
+          .reduce((sum, a) => sum + (Number(a.amount) || 0), 0)
+        const netAmount = Math.max(0, Number(s.salary) - advancesThisMonth)
         generated.push({
           id: `auto_salary_${s.id}_${monthKey}`,
           recurringKey: `salary:${s.id}:${monthKey}`,
           date: `${year}-${String(month + 1).padStart(2, '0')}-${String(clampDay(settings.autoSalaryExpenseDay)).padStart(2, '0')}T12:00:00`,
           category: 'Salaries',
           description: `Salary - ${s.name}`,
-          amount: Number(s.salary),
+          amount: netAmount,
           paymentMethod: 'Bank Transfer',
-          notes: 'Automatic monthly salary expense',
+          notes:
+            advancesThisMonth > 0
+              ? `Automatic monthly salary expense. ${formatCurrency(advancesThisMonth, settings.currencySymbol)} already paid as an advance this month is netted off (full salary: ${formatCurrency(Number(s.salary), settings.currencySymbol)}).`
+              : 'Automatic monthly salary expense',
           source: 'automatic',
           createdAt: today.toISOString(),
         })
@@ -647,7 +674,7 @@ export function AppProvider({ children }) {
     } catch (err) {
       console.error('[supabase] failed to create automatic monthly expenses:', err)
     }
-  }, [settings.autoExpensesSavedAt, staff])
+  }, [settings.autoExpensesSavedAt, settings.currencySymbol, staff, staffAdvances])
 
 
   useEffect(() => {
@@ -688,6 +715,83 @@ export function AppProvider({ children }) {
     setExpenses((prev) => prev.filter((e) => e.id !== id))
     syncExpenseDeleteToRemote(id)
   }, [syncExpenseDeleteToRemote])
+
+  // ---- Staff Advances ----
+  // Advance payments given against a staff member's future salary. Stored
+  // in the same shared app_state table as expenses, using the same
+  // fetch-merge-write flow so two devices recording an advance around the
+  // same time don't clobber each other's entries.
+  const syncStaffAdvanceCreateToRemote = useCallback(async (advance) => {
+    if (!isSupabaseConfigured) return
+    try {
+      const remoteRaw = await fetchAppStateKey('staffAdvances')
+      const remote = Array.isArray(remoteRaw) ? remoteRaw : []
+      const merged = remote.some((a) => a.id === advance.id) ? remote : [advance, ...remote]
+      await saveAppState('staffAdvances', merged)
+      setStaffAdvances((prev) => {
+        const localOnly = prev.filter((a) => a.id !== advance.id && !merged.some((ra) => ra.id === a.id))
+        return [...merged, ...localOnly]
+      })
+    } catch (err) {
+      console.error('[supabase] failed to merge-sync new staff advance:', err)
+    }
+  }, [])
+
+  const syncStaffAdvanceDeleteToRemote = useCallback(async (id) => {
+    if (!isSupabaseConfigured) return
+    try {
+      const remoteRaw = await fetchAppStateKey('staffAdvances')
+      const remote = Array.isArray(remoteRaw) ? remoteRaw : []
+      const merged = remote.filter((a) => a.id !== id)
+      await saveAppState('staffAdvances', merged)
+      setStaffAdvances((prev) => prev.filter((a) => a.id !== id))
+    } catch (err) {
+      console.error('[supabase] failed to merge-sync staff advance delete:', err)
+    }
+  }, [])
+
+  // Recording an advance also drops a matching expense (category "Staff
+  // Advance") so Finance/Reports/Dashboard cash-out totals already include
+  // it without any extra manual entry. The two records are linked by
+  // expenseId so deleting the advance cleans up the expense too.
+  const addStaffAdvance = useCallback(
+    (draft) => {
+      const staffMember = staff.find((s) => s.id === draft.staffId)
+      const date = draft.date || new Date().toISOString()
+      const amount = Number(draft.amount) || 0
+      const linkedExpense = addExpense({
+        date,
+        category: 'Staff Advance',
+        description: `Advance - ${staffMember?.name || 'Staff'}`,
+        amount,
+        paymentMethod: draft.paymentMethod || 'Cash',
+        notes: draft.note || '',
+      })
+      const advance = {
+        id: uid('adv'),
+        staffId: draft.staffId,
+        date,
+        amount,
+        paymentMethod: draft.paymentMethod || 'Cash',
+        note: draft.note || '',
+        expenseId: linkedExpense.id,
+      }
+      setStaffAdvances((prev) => [advance, ...prev])
+      syncStaffAdvanceCreateToRemote(advance)
+      return advance
+    },
+    [staff, addExpense, syncStaffAdvanceCreateToRemote],
+  )
+
+  const deleteStaffAdvance = useCallback(
+    (id) => {
+      const found = staffAdvances.find((a) => a.id === id)
+      if (found?.expenseId) deleteExpense(found.expenseId)
+      setStaffAdvances((prev) => prev.filter((a) => a.id !== id))
+      syncStaffAdvanceDeleteToRemote(id)
+    },
+    [staffAdvances, deleteExpense, syncStaffAdvanceDeleteToRemote],
+  )
 
   const createBill = useCallback(
     (billDraft) => {
@@ -897,11 +1001,12 @@ export function AppProvider({ children }) {
       followUps,
       bills,
       expenses,
+      staffAdvances,
       settings,
       membershipPlans,
       clientMemberships,
     }
-  }, [clients, services, products, staff, attendance, templates, followUps, bills, expenses, settings, membershipPlans, clientMemberships])
+  }, [clients, services, products, staff, attendance, templates, followUps, bills, expenses, staffAdvances, settings, membershipPlans, clientMemberships])
 
   const restoreBackup = useCallback((data) => {
     if (data.clients) setClients(data.clients)
@@ -912,6 +1017,7 @@ export function AppProvider({ children }) {
     if (data.templates) setTemplates(data.templates)
     if (data.followUps) setFollowUps(data.followUps)
     if (data.expenses) setExpenses(data.expenses)
+    if (data.staffAdvances) setStaffAdvances(data.staffAdvances)
     if (data.bills) {
       setBills(data.bills)
       // `bills` is intentionally excluded from the generic auto-sync effect
@@ -974,6 +1080,9 @@ export function AppProvider({ children }) {
     addExpense,
     updateExpense,
     deleteExpense,
+    staffAdvances,
+    addStaffAdvance,
+    deleteStaffAdvance,
     createBill,
     updateBill,
     deleteBill,

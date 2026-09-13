@@ -477,9 +477,25 @@ export function whatsappMembershipMessage(settings, membership, plan) {
   return lines.join('\n')
 }
 
+// Category name for services/products that already carry a bundled-in
+// discount (e.g. combo packages). Items in this category are exempt from
+// every other discount mechanism — manual item discount, membership
+// auto-discount, free-service claims, and whole-bill flat/percent discount
+// — so a second discount is never stacked on top of one they already have.
+// Matched case-insensitively so "Special Combo", "special combo", etc. all
+// count.
+export const NO_DISCOUNT_CATEGORY = 'Special Combo'
+
+export function isNoDiscountCategory(category) {
+  return String(category || '').trim().toLowerCase() === NO_DISCOUNT_CATEGORY.toLowerCase()
+}
+
 export function calcLineTotal(item) {
   const gross = item.price * item.qty
-  const discountPercent = Number(item.discountPercent) || 0
+  // Special Combo items are already discounted in their listed price, so no
+  // further discount is ever applied here, regardless of what discountPercent
+  // holds (e.g. left over from a membership auto-discount or a free claim).
+  const discountPercent = isNoDiscountCategory(item.category) ? 0 : Number(item.discountPercent) || 0
   const discount = gross * (discountPercent / 100)
   return { gross, discount, net: gross - discount }
 }
@@ -487,10 +503,16 @@ export function calcLineTotal(item) {
 export function calcBillItemRevenue(bill) {
   const items = bill.items || []
   const nets = items.map((it) => calcLineTotal(it).net)
-  const subtotal = nets.reduce((sum, n) => sum + n, 0)
   const discountAmount = Number(bill.discountAmount) || 0
-  const ratio = subtotal > 0 ? Math.min(1, discountAmount / subtotal) : 0
-  return nets.map((n) => Math.round(n * (1 - ratio) * 100) / 100)
+  // The whole-bill flat/percent discount is only ever spread across items
+  // that are allowed to be discounted — Special Combo items keep their full
+  // net revenue regardless of a bill-level discount.
+  const discountableNet = items.reduce((sum, it, idx) => (isNoDiscountCategory(it.category) ? sum : sum + nets[idx]), 0)
+  const ratio = discountableNet > 0 ? Math.min(1, discountAmount / discountableNet) : 0
+  return items.map((it, idx) => {
+    if (isNoDiscountCategory(it.category)) return Math.round(nets[idx] * 100) / 100
+    return Math.round(nets[idx] * (1 - ratio) * 100) / 100
+  })
 }
 
 // Computes visit-cadence and spend insights for a single client from their
@@ -552,19 +574,24 @@ export function getClientSegment(client) {
 export function calcBillTotals({ items, discountType, discountValue, taxPercent }) {
   let grossSubtotal = 0
   let itemDiscountTotal = 0
+  let discountableSubtotal = 0
   items.forEach((it) => {
-    const { gross, discount } = calcLineTotal(it)
+    const { gross, discount, net } = calcLineTotal(it)
     grossSubtotal += gross
     itemDiscountTotal += discount
+    // Special Combo items are already discounted, so they're excluded from
+    // the pool the whole-bill flat/percent discount is calculated against —
+    // otherwise a bill-wide discount would quietly shave their price too.
+    if (!isNoDiscountCategory(it.category)) discountableSubtotal += net
   })
   const subtotal = grossSubtotal - itemDiscountTotal
   let discountAmount = 0
   if (discountType === 'percent') {
-    discountAmount = (subtotal * (Number(discountValue) || 0)) / 100
+    discountAmount = (discountableSubtotal * (Number(discountValue) || 0)) / 100
   } else if (discountType === 'flat') {
     discountAmount = Number(discountValue) || 0
   }
-  discountAmount = Math.min(discountAmount, subtotal)
+  discountAmount = Math.min(discountAmount, discountableSubtotal)
   const taxable = subtotal - discountAmount
   const taxAmount = (taxable * (Number(taxPercent) || 0)) / 100
   const total = taxable + taxAmount

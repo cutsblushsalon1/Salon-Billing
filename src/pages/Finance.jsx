@@ -33,6 +33,7 @@ import { can } from '../utils/permissions.js'
 const CATEGORIES = [
   'Rent',
   'Salaries',
+  'Staff Advance',
   'Electricity',
   'Water',
   'Internet',

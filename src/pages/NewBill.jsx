@@ -25,6 +25,7 @@ import InvoiceWhatsAppButton from '../components/InvoiceWhatsAppButton.jsx'
 import {
   calcBillTotals,
   calcLineTotal,
+  isNoDiscountCategory,
   formatCurrency,
   formatDate,
   findActiveMembership,
@@ -115,8 +116,9 @@ export default function NewBill() {
           type,
           name: item.name,
           price: item.price,
+          category: item.category || '',
           qty: 1,
-          discountPercent: autoDiscount,
+          discountPercent: isNoDiscountCategory(item.category) ? 0 : autoDiscount,
           staffId: '',
           staffName: '',
           isFreeClaim: false,
@@ -138,7 +140,11 @@ export default function NewBill() {
   function updateItemDiscount(refId, type, value) {
     const clamped = Math.max(0, Math.min(100, Number(value) || 0))
     setCart((prev) =>
-      prev.map((c) => (c.refId === refId && c.type === type ? { ...c, discountPercent: clamped, isFreeClaim: false } : c)),
+      prev.map((c) =>
+        c.refId === refId && c.type === type && !isNoDiscountCategory(c.category)
+          ? { ...c, discountPercent: clamped, isFreeClaim: false }
+          : c,
+      ),
     )
   }
 
@@ -196,7 +202,7 @@ export default function NewBill() {
   function toggleFreeClaim(refId, type) {
     setCart((prev) =>
       prev.map((c) => {
-        if (c.refId !== refId || c.type !== type) return c
+        if (c.refId !== refId || c.type !== type || isNoDiscountCategory(c.category)) return c
         if (c.isFreeClaim) {
           // Un-claim: fall back to whatever discount the membership would
           // otherwise auto-apply for this item type.
@@ -222,6 +228,7 @@ export default function NewBill() {
     setCart((prev) =>
       prev.map((c) => {
         if (c.isFreeClaim) return c
+        if (isNoDiscountCategory(c.category)) return c
         const current = Number(c.discountPercent) || 0
         if (current === (prevAuto[c.type] || 0)) {
           return { ...c, discountPercent: nextAuto[c.type] || 0 }
@@ -543,6 +550,7 @@ export default function NewBill() {
                   const line = calcLineTotal(c)
                   const canClaimFree =
                     c.type === 'service' &&
+                    !isNoDiscountCategory(c.category) &&
                     freeServiceInfo?.eligible &&
                     freeServiceInfo.serviceIds.includes(c.refId) &&
                     (c.isFreeClaim || freeCreditsLeftForBill >= c.qty)
@@ -601,18 +609,24 @@ export default function NewBill() {
                       </div>
                       <div className="flex items-center justify-between gap-2 mt-2">
                         <div className="flex items-center gap-1.5">
-                          <label className="text-[11px] text-muted">Item discount</label>
-                          <input
-                            type="number"
-                            min="0"
-                            max="100"
-                            value={c.discountPercent || ''}
-                            onChange={(e) => updateItemDiscount(c.refId, c.type, e.target.value)}
-                            placeholder="0"
-                            disabled={c.isFreeClaim}
-                            className="w-14 rounded-md border border-black/10 px-1.5 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-brass/60 focus:border-brass disabled:opacity-50"
-                          />
-                          <span className="text-[11px] text-muted">%</span>
+                          {isNoDiscountCategory(c.category) ? (
+                            <span className="text-[11px] text-muted italic">No discount (already a combo price)</span>
+                          ) : (
+                            <>
+                              <label className="text-[11px] text-muted">Item discount</label>
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={c.discountPercent || ''}
+                                onChange={(e) => updateItemDiscount(c.refId, c.type, e.target.value)}
+                                placeholder="0"
+                                disabled={c.isFreeClaim}
+                                className="w-14 rounded-md border border-black/10 px-1.5 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-brass/60 focus:border-brass disabled:opacity-50"
+                              />
+                              <span className="text-[11px] text-muted">%</span>
+                            </>
+                          )}
                         </div>
                         <p className="text-xs tabular">
                           {line.discount > 0 && (
@@ -650,6 +664,11 @@ export default function NewBill() {
                   onChange={(e) => setDiscountValue(e.target.value)}
                 />
               </div>
+              {discountType !== 'none' && cart.some((c) => isNoDiscountCategory(c.category)) && (
+                <p className="text-[11px] text-muted -mt-1.5">
+                  This won't be applied to Special Combo items — they're already discounted.
+                </p>
+              )}
               <div>
                 <label className="label">Tax %</label>
                 <input
