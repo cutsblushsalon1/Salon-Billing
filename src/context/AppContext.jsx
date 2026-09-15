@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react'
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react'
 import { seedServices, seedProducts, seedStaff, seedTemplates, seedMembershipPlans, defaultSettings } from '../data/seed.js'
 import { uid, buildInvoiceNumber, formatCurrency } from '../utils/helpers.js'
 import { pushInvoiceToSupabase } from '../utils/invoiceSync.js'
@@ -87,6 +87,15 @@ export function AppProvider({ children }) {
   // has a linked expense (see addStaffAdvance) so cash-out reporting
   // already accounts for it.
   const [staffAdvances, setStaffAdvances] = useState(() => loadJSON(STORAGE_KEYS.staffAdvances, []))
+  // Read by ensureAutomaticMonthlyExpenses below without being a dependency
+  // of it — giving/removing an advance must not change that callback's
+  // identity, or it re-triggers the automatic-expense-generation effect on
+  // every advance, racing its own read-modify-write of `expenses` against
+  // the advance's own expense write and silently dropping one of them.
+  const staffAdvancesRef = useRef(staffAdvances)
+  useEffect(() => {
+    staffAdvancesRef.current = staffAdvances
+  }, [staffAdvances])
   // Merge over defaultSettings (not just fall back to it) so a
   // returning user's older localStorage blob - saved before newer
   // settings fields existed (e.g. the invoice WhatsApp API options)
@@ -615,7 +624,7 @@ export function AppProvider({ children }) {
         // Net off any advances already given to this staff member this
         // month, so the automatic salary expense doesn't double-count cash
         // that already went out the door as an advance.
-        const advancesThisMonth = staffAdvances
+        const advancesThisMonth = staffAdvancesRef.current
           .filter((a) => a.staffId === s.id)
           .filter((a) => {
             const d = new Date(a.date)
@@ -674,7 +683,7 @@ export function AppProvider({ children }) {
     } catch (err) {
       console.error('[supabase] failed to create automatic monthly expenses:', err)
     }
-  }, [settings.autoExpensesSavedAt, settings.currencySymbol, staff, staffAdvances])
+  }, [settings.autoExpensesSavedAt, settings.currencySymbol, staff])
 
 
   useEffect(() => {
