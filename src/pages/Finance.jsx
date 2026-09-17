@@ -76,7 +76,21 @@ function previousRange(startDate, endDate) {
 }
 
 export default function Finance() {
-  const { bills, expenses, addExpense, updateExpense, deleteExpense, settings, updateSettings, role } = useApp()
+  const {
+    bills,
+    expenses,
+    addExpense,
+    updateExpense,
+    deleteExpense,
+    settings,
+    updateSettings,
+    role,
+    staff,
+    staffAdvances,
+    addStaffAdvance,
+    deleteStaffAdvance,
+    unlinkStaffAdvance,
+  } = useApp()
   const currency = settings.currencySymbol || '₹'
 
   const [startDate, setStartDate] = useState('')
@@ -91,7 +105,13 @@ export default function Finance() {
     amount: '',
     paymentMethod: 'UPI',
     notes: '',
+    staffId: '',
   })
+
+  // Looks up the staffAdvances entry (if any) linked to a given expense id,
+  // so editing/deleting a "Staff Advance" expense here stays in sync with
+  // the record that actually shows on the staff member's profile.
+  const linkedAdvanceForExpense = (expenseId) => staffAdvances.find((a) => a.expenseId === expenseId)
 
   // Automatic expense settings are edited locally and only committed when
   // the user explicitly clicks Save. This prevents partially-entered rent
@@ -229,24 +249,81 @@ export default function Finance() {
   )
 
   function resetExpenseForm() {
-    setForm({ date: toDateInputValue(new Date()), category: 'Products & Supplies', description: '', amount: '', paymentMethod: 'UPI', notes: '' })
+    setForm({ date: toDateInputValue(new Date()), category: 'Products & Supplies', description: '', amount: '', paymentMethod: 'UPI', notes: '', staffId: '' })
     setEditingExpenseId(null)
     setShowForm(false)
   }
 
   function startEditExpense(expense) {
     setEditingExpenseId(expense.id)
-    setForm({ date: toDateInputValue(expense.date), category: expense.category || 'Other', description: expense.description || '', amount: expense.amount ?? '', paymentMethod: expense.paymentMethod || 'Cash', notes: expense.notes || '' })
+    const linkedAdvance = linkedAdvanceForExpense(expense.id)
+    setForm({
+      date: toDateInputValue(expense.date),
+      category: expense.category || 'Other',
+      description: expense.description || '',
+      amount: expense.amount ?? '',
+      paymentMethod: expense.paymentMethod || 'Cash',
+      notes: expense.notes || '',
+      staffId: linkedAdvance?.staffId || '',
+    })
     setShowForm(true)
   }
 
   function submitExpense(e) {
     e.preventDefault()
+
+    if (form.category === 'Staff Advance') {
+      // Staff Advance expenses must be tied to a staff member so they show
+      // up on that person's profile - route this through the same
+      // addStaffAdvance flow the Staff page uses, instead of a plain
+      // expense with nowhere for the staff link to live.
+      if (!form.staffId || Number(form.amount) <= 0) return
+      if (editingExpenseId) {
+        // Re-creating (rather than patching in place) keeps this single
+        // code path in sync with however addStaffAdvance links an advance
+        // to its expense, whether this was already a linked advance or a
+        // legacy plain expense being corrected into one now.
+        const linkedAdvance = linkedAdvanceForExpense(editingExpenseId)
+        if (linkedAdvance) deleteStaffAdvance(linkedAdvance.id)
+        else deleteExpense(editingExpenseId)
+      }
+      addStaffAdvance({
+        staffId: form.staffId,
+        amount: Number(form.amount),
+        date: `${form.date}T12:00:00`,
+        paymentMethod: form.paymentMethod,
+        note: form.notes || form.description,
+      })
+      resetExpenseForm()
+      return
+    }
+
     if (!form.description.trim() || Number(form.amount) <= 0) return
-    const payload = { ...form, amount: Number(form.amount), date: `${form.date}T12:00:00` }
+
+    if (editingExpenseId) {
+      // Category was changed away from "Staff Advance" - stop counting it
+      // as an advance for that staff member, but keep the expense record
+      // itself (now just a normal expense) rather than deleting it.
+      const linkedAdvance = linkedAdvanceForExpense(editingExpenseId)
+      if (linkedAdvance) unlinkStaffAdvance(linkedAdvance.id)
+    }
+
+    const { staffId, ...rest } = form
+    const payload = { ...rest, amount: Number(form.amount), date: `${form.date}T12:00:00` }
     if (editingExpenseId) updateExpense(editingExpenseId, payload)
     else addExpense(payload)
     resetExpenseForm()
+  }
+
+  function handleDeleteExpense(expense) {
+    if (!window.confirm(`Delete this ${formatCurrency(expense.amount, currency)} expense?`)) return
+    // A "Staff Advance" expense created via Give Advance (or fixed up
+    // through the edit flow above) has a linked staffAdvances record -
+    // deleting just the expense would leave that advance dangling on the
+    // staff member's profile pointing at nothing, so remove both together.
+    const linkedAdvance = linkedAdvanceForExpense(expense.id)
+    if (linkedAdvance) deleteStaffAdvance(linkedAdvance.id)
+    else deleteExpense(expense.id)
   }
 
   const growthLabel = startDate || endDate ? 'vs. previous period' : 'vs. previous month'
@@ -353,10 +430,24 @@ export default function Finance() {
                 {CATEGORIES.map((category) => <option key={category}>{category}</option>)}
               </select>
             </div>
-            <div className="lg:col-span-1">
-              <label className="label">Description</label>
-              <input className="input" required placeholder="e.g. Monthly rent" value={form.description} onChange={(e) => setForm((s) => ({ ...s, description: capitalizeWordsPreserveSpaces(e.target.value) }))} />
-            </div>
+            {form.category === 'Staff Advance' ? (
+              <div>
+                <label className="label">Staff member</label>
+                <select className="input" required value={form.staffId} onChange={(e) => setForm((s) => ({ ...s, staffId: e.target.value }))}>
+                  <option value="">Select staff…</option>
+                  {staff.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div className="lg:col-span-1">
+                <label className="label">Description</label>
+                <input className="input" required placeholder="e.g. Monthly rent" value={form.description} onChange={(e) => setForm((s) => ({ ...s, description: capitalizeWordsPreserveSpaces(e.target.value) }))} />
+              </div>
+            )}
             <div>
               <label className="label">Amount</label>
               <div className="relative">
@@ -375,8 +466,19 @@ export default function Finance() {
             <label className="label">Notes (optional)</label>
             <input className="input" placeholder="Optional details" value={form.notes} onChange={(e) => setForm((s) => ({ ...s, notes: capitalizeWordsPreserveSpaces(e.target.value) }))} />
           </div>
+          {form.category === 'Staff Advance' && (
+            <p className="text-xs text-muted mt-2">
+              This will show up against the selected staff member's advances on their Staff profile, netted off their next automatic salary.
+            </p>
+          )}
           <div className="flex justify-end mt-4">
-            <button className="btn-primary" type="submit">{editingExpenseId ? <Pencil size={15} /> : <Plus size={15} />} {editingExpenseId ? 'Update expense' : 'Save expense'}</button>
+            <button
+              className="btn-primary"
+              type="submit"
+              disabled={form.category === 'Staff Advance' && !form.staffId}
+            >
+              {editingExpenseId ? <Pencil size={15} /> : <Plus size={15} />} {editingExpenseId ? 'Update expense' : 'Save expense'}
+            </button>
           </div>
         </form>
       )}
@@ -487,6 +589,11 @@ export default function Finance() {
                     <td className="py-3 pr-3">
                       <p className="text-ink">{expense.description}</p>
                       {expense.notes && <p className="text-[11px] text-muted mt-0.5">{expense.notes}</p>}
+                      {expense.category === 'Staff Advance' && !linkedAdvanceForExpense(expense.id) && (
+                        <p className="text-[11px] text-danger mt-0.5">
+                          Not linked to a staff member — edit and choose one so it shows on the Staff page.
+                        </p>
+                      )}
                     </td>
                     <td className="py-3 pr-3 text-muted">{expense.paymentMethod}</td>
                     <td className="py-3 pr-3 text-right font-semibold tabular">{formatCurrency(expense.amount, currency)}</td>
@@ -496,9 +603,7 @@ export default function Finance() {
                           <Pencil size={15} />
                         </button>
                         {can(role, 'expense.delete') && (
-                          <button className="p-2 rounded-lg text-muted hover:text-danger hover:bg-danger/5" title="Delete expense" onClick={() => {
-                            if (window.confirm(`Delete this ${formatCurrency(expense.amount, currency)} expense?`)) deleteExpense(expense.id)
-                          }}>
+                          <button className="p-2 rounded-lg text-muted hover:text-danger hover:bg-danger/5" title="Delete expense" onClick={() => handleDeleteExpense(expense)}>
                             <Trash2 size={15} />
                           </button>
                         )}

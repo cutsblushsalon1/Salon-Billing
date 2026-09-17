@@ -66,6 +66,57 @@ export function isInRange(dateStr, start, end) {
   return d >= s && d <= e
 }
 
+// Clamps a configured day-of-month (1-31) to however many days the given
+// month actually has, e.g. "31" in February becomes 28 or 29.
+export function clampDayToMonth(day, year, month) {
+  const requested = Math.min(31, Math.max(1, Number(day) || 1))
+  return Math.min(requested, new Date(year, month + 1, 0).getDate())
+}
+
+// Everything needed to know (and show) where a staff member's automatic
+// salary stands for the month containing `referenceDate` (defaults to
+// now): whether they've been employed for enough of this month's pay
+// cycle to be included in it at all, how much of their salary is already
+// covered by advances given this month, and what's left to pay.
+//
+// A staff member who joined AFTER this month's automatic salary day isn't
+// eligible for a salary run this cycle - their first automatic salary
+// starts next month instead of a partial/back-dated one now. Shared by
+// AppContext's ensureAutomaticMonthlyExpenses (which decides whether to
+// generate the expense) and the Staff page (which shows this to the
+// user), so the two can never disagree with each other.
+export function getStaffSalaryStatus(staffMember, staffAdvances = [], settings = {}, referenceDate = new Date()) {
+  const year = referenceDate.getFullYear()
+  const month = referenceDate.getMonth()
+  const payDay = clampDayToMonth(settings.autoSalaryExpenseDay, year, month)
+  const grossSalary = Number(staffMember?.salary) || 0
+
+  const advancesThisMonth = (staffAdvances || [])
+    .filter((a) => a.staffId === staffMember?.id)
+    .filter((a) => {
+      const d = new Date(a.date)
+      return d.getFullYear() === year && d.getMonth() === month
+    })
+    .reduce((sum, a) => sum + (Number(a.amount) || 0), 0)
+
+  let eligibleThisCycle = true
+  const joined = staffMember?.joinedAt ? new Date(staffMember.joinedAt) : null
+  if (joined && !Number.isNaN(joined.getTime())) {
+    if (joined > referenceDate) {
+      eligibleThisCycle = false
+    } else if (joined.getFullYear() === year && joined.getMonth() === month && joined.getDate() > payDay) {
+      eligibleThisCycle = false
+    }
+  }
+
+  const netPayable = eligibleThisCycle ? Math.max(0, grossSalary - advancesThisMonth) : 0
+  const nextPayDate = eligibleThisCycle
+    ? new Date(year, month, payDay)
+    : new Date(year, month + 1, clampDayToMonth(settings.autoSalaryExpenseDay, year, month + 1))
+
+  return { grossSalary, advancesThisMonth, netPayable, eligibleThisCycle, payDay, nextPayDate }
+}
+
 export function buildInvoiceNumber(prefix, counter) {
   return `${prefix}-${String(counter).padStart(4, '0')}`
 }

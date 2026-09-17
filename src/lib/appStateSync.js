@@ -13,6 +13,17 @@ export const SYNC_KEYS = [
   'followUps',
   'bills',
   'expenses',
+  // Staff advances are pushed to Supabase (see addStaffAdvance/
+  // deleteStaffAdvance in AppContext.jsx) but were missing from this list,
+  // so the one-time pull on page load never fetched them back - a device
+  // that didn't record the advance itself would show nothing until it
+  // happened to write something else. Keeping this key listed is what
+  // makes advances actually show up across devices.
+  'staffAdvances',
+  // Recurring automatic-expense keys (e.g. "salary:<staffId>:<yyyy-mm>")
+  // the user has explicitly deleted, so ensureAutomaticMonthlyExpenses
+  // knows not to silently recreate them on the next hydration/refresh.
+  'dismissedAutoExpenses',
   'settings',
   'membershipPlans',
   'clientMemberships',

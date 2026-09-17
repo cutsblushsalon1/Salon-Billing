@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react'
 import { seedServices, seedProducts, seedStaff, seedTemplates, seedMembershipPlans, defaultSettings } from '../data/seed.js'
-import { uid, buildInvoiceNumber, formatCurrency } from '../utils/helpers.js'
+import { uid, buildInvoiceNumber, formatCurrency, getStaffSalaryStatus } from '../utils/helpers.js'
 import { pushInvoiceToSupabase } from '../utils/invoiceSync.js'
 import { fetchAppState, fetchAppStateKey, saveAppState } from '../lib/appStateSync.js'
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient.js'
@@ -40,6 +40,7 @@ const STORAGE_KEYS = {
   bills: 'salon_bills',
   expenses: 'salon_expenses',
   staffAdvances: 'salon_staff_advances',
+  dismissedAutoExpenses: 'salon_dismissed_auto_expenses',
   settings: 'salon_settings',
   membershipPlans: 'salon_membership_plans',
   clientMemberships: 'salon_client_memberships',
@@ -96,6 +97,17 @@ export function AppProvider({ children }) {
   useEffect(() => {
     staffAdvancesRef.current = staffAdvances
   }, [staffAdvances])
+  // Recurring keys (e.g. "salary:stf_1:2026-09") for automatic expenses the
+  // user has deliberately deleted. Without this, ensureAutomaticMonthlyExpenses
+  // has no way to tell "never created yet" apart from "created, then the
+  // user removed it" - it only knows a recurringKey is missing from the
+  // expenses list, so on the next hydration/refresh it would just create it
+  // again. Same ref-not-dependency reasoning as staffAdvancesRef above.
+  const [dismissedAutoExpenses, setDismissedAutoExpenses] = useState(() => loadJSON(STORAGE_KEYS.dismissedAutoExpenses, []))
+  const dismissedAutoExpensesRef = useRef(dismissedAutoExpenses)
+  useEffect(() => {
+    dismissedAutoExpensesRef.current = dismissedAutoExpenses
+  }, [dismissedAutoExpenses])
   // Merge over defaultSettings (not just fall back to it) so a
   // returning user's older localStorage blob - saved before newer
   // settings fields existed (e.g. the invoice WhatsApp API options)
@@ -145,6 +157,7 @@ export function AppProvider({ children }) {
       if (remote.bills) setBills(remote.bills)
       if (remote.expenses) setExpenses(remote.expenses)
       if (remote.staffAdvances) setStaffAdvances(remote.staffAdvances)
+      if (remote.dismissedAutoExpenses) setDismissedAutoExpenses(remote.dismissedAutoExpenses)
       if (remote.settings) setSettings(remote.settings)
       if (remote.membershipPlans) setMembershipPlans(remote.membershipPlans)
       if (remote.clientMemberships) setClientMemberships(remote.clientMemberships)
@@ -211,10 +224,16 @@ export function AppProvider({ children }) {
       // Publish only a privacy-safe subset (id/name/role, active staff
       // only) to the public catalog so the booking website can offer a
       // "choose your staff" option without ever exposing phone numbers,
-      // salaries, or commission rates to anonymous visitors.
+      // salaries, or commission rates to anonymous visitors. A staff member
+      // can also be explicitly hidden from the site (showOnBookingSite ===
+      // false) while staying active internally - e.g. someone who works in
+      // the salon but shouldn't be bookable by walk-in-site clients yet.
+      // Missing the field entirely (older staff records) defaults to shown.
       pushPublicCatalog(
         'staff',
-        staff.filter((s) => s.active).map((s) => ({ id: s.id, name: s.name, role: s.role })),
+        staff
+          .filter((s) => s.active && s.showOnBookingSite !== false)
+          .map((s) => ({ id: s.id, name: s.name, role: s.role })),
       )
     }
   }, [staff, hydrated])
@@ -243,6 +262,14 @@ export function AppProvider({ children }) {
     // of a blind overwrite here, so two devices recording advances around
     // the same time don't clobber each other's entries.
   }, [staffAdvances])
+  useEffect(() => {
+    saveJSON(STORAGE_KEYS.dismissedAutoExpenses, dismissedAutoExpenses)
+    // Low-contention list (only grows when someone deletes an auto expense),
+    // so a plain overwrite here is fine - same pattern as attendance/templates/
+    // followUps below rather than the fetch-merge-write dance used for
+    // expenses/staffAdvances.
+    if (hydrated) saveAppState('dismissedAutoExpenses', dismissedAutoExpenses)
+  }, [dismissedAutoExpenses, hydrated])
   useEffect(() => {
     saveJSON(STORAGE_KEYS.bills, bills)
     // NOTE: deliberately NOT calling saveAppState('bills', bills) here.
@@ -621,28 +648,25 @@ export function AppProvider({ children }) {
 
     if (settings.autoSalaryExpensesEnabled !== false && today.getDate() >= clampDay(settings.autoSalaryExpenseDay)) {
       staff.filter((s) => s.active !== false && Number(s.salary) > 0).forEach((s) => {
-        // Net off any advances already given to this staff member this
-        // month, so the automatic salary expense doesn't double-count cash
-        // that already went out the door as an advance.
-        const advancesThisMonth = staffAdvancesRef.current
-          .filter((a) => a.staffId === s.id)
-          .filter((a) => {
-            const d = new Date(a.date)
-            return d.getFullYear() === year && d.getMonth() === month
-          })
-          .reduce((sum, a) => sum + (Number(a.amount) || 0), 0)
-        const netAmount = Math.max(0, Number(s.salary) - advancesThisMonth)
+        // getStaffSalaryStatus nets off any advances already given this
+        // month (so the automatic salary doesn't double-count cash that
+        // already went out as an advance) AND checks the staff member's
+        // joining date against this month's pay day - someone added AFTER
+        // the pay day hasn't completed a pay cycle yet, so they're skipped
+        // this run and picked up automatically next month instead.
+        const status = getStaffSalaryStatus(s, staffAdvancesRef.current, settings, today)
+        if (!status.eligibleThisCycle) return
         generated.push({
           id: `auto_salary_${s.id}_${monthKey}`,
           recurringKey: `salary:${s.id}:${monthKey}`,
           date: `${year}-${String(month + 1).padStart(2, '0')}-${String(clampDay(settings.autoSalaryExpenseDay)).padStart(2, '0')}T12:00:00`,
           category: 'Salaries',
           description: `Salary - ${s.name}`,
-          amount: netAmount,
+          amount: status.netPayable,
           paymentMethod: 'Bank Transfer',
           notes:
-            advancesThisMonth > 0
-              ? `Automatic monthly salary expense. ${formatCurrency(advancesThisMonth, settings.currencySymbol)} already paid as an advance this month is netted off (full salary: ${formatCurrency(Number(s.salary), settings.currencySymbol)}).`
+            status.advancesThisMonth > 0
+              ? `Automatic monthly salary expense. ${formatCurrency(status.advancesThisMonth, settings.currencySymbol)} already paid as an advance this month is netted off (full salary: ${formatCurrency(status.grossSalary, settings.currencySymbol)}).`
               : 'Automatic monthly salary expense',
           source: 'automatic',
           createdAt: today.toISOString(),
@@ -665,13 +689,17 @@ export function AppProvider({ children }) {
       })
     }
 
-    if (!generated.length) return
+    // Drop anything the user has explicitly deleted before - otherwise every
+    // hydration/refresh would just recreate it the moment its recurringKey
+    // shows up as "missing" from the expenses list below.
+    const notDismissed = generated.filter((e) => !dismissedAutoExpensesRef.current.includes(e.recurringKey))
+    if (!notDismissed.length) return
 
     try {
       const remoteRaw = await fetchAppStateKey('expenses')
       const remote = Array.isArray(remoteRaw) ? remoteRaw : []
       const existingKeys = new Set(remote.map((e) => e.recurringKey).filter(Boolean))
-      const missing = generated.filter((e) => !existingKeys.has(e.recurringKey) && !remote.some((r) => r.id === e.id))
+      const missing = notDismissed.filter((e) => !existingKeys.has(e.recurringKey) && !remote.some((r) => r.id === e.id))
       if (!missing.length) return
       const merged = [...missing, ...remote]
       await saveAppState('expenses', merged)
@@ -721,7 +749,20 @@ export function AppProvider({ children }) {
   }, [syncExpenseUpdateToRemote])
 
   const deleteExpense = useCallback((id) => {
-    setExpenses((prev) => prev.filter((e) => e.id !== id))
+    setExpenses((prev) => {
+      const target = prev.find((e) => e.id === id)
+      // Removing an automatically-generated expense (salary/rent) is a
+      // deliberate "not this cycle" decision, not just clearing a record -
+      // remember its recurringKey so the automatic-expense effect doesn't
+      // silently put it right back on the next refresh (see
+      // dismissedAutoExpenses above).
+      if (target?.source === 'automatic' && target.recurringKey) {
+        setDismissedAutoExpenses((prevDismissed) =>
+          prevDismissed.includes(target.recurringKey) ? prevDismissed : [...prevDismissed, target.recurringKey],
+        )
+      }
+      return prev.filter((e) => e.id !== id)
+    })
     syncExpenseDeleteToRemote(id)
   }, [syncExpenseDeleteToRemote])
 
@@ -800,6 +841,19 @@ export function AppProvider({ children }) {
       syncStaffAdvanceDeleteToRemote(id)
     },
     [staffAdvances, deleteExpense, syncStaffAdvanceDeleteToRemote],
+  )
+
+  // Removes only the staffAdvances record, leaving its linked expense
+  // alone. Used from Finance when an expense that used to be a "Staff
+  // Advance" is edited to a different category - it should stop counting
+  // toward that staff member's advances, but the expense entry itself (now
+  // just a normal expense) shouldn't disappear.
+  const unlinkStaffAdvance = useCallback(
+    (id) => {
+      setStaffAdvances((prev) => prev.filter((a) => a.id !== id))
+      syncStaffAdvanceDeleteToRemote(id)
+    },
+    [syncStaffAdvanceDeleteToRemote],
   )
 
   const createBill = useCallback(
@@ -992,7 +1046,9 @@ export function AppProvider({ children }) {
     () =>
       pushPublicCatalog(
         'staff',
-        staff.filter((s) => s.active).map((s) => ({ id: s.id, name: s.name, role: s.role })),
+        staff
+          .filter((s) => s.active && s.showOnBookingSite !== false)
+          .map((s) => ({ id: s.id, name: s.name, role: s.role })),
       ),
     [staff],
   )
@@ -1011,11 +1067,12 @@ export function AppProvider({ children }) {
       bills,
       expenses,
       staffAdvances,
+      dismissedAutoExpenses,
       settings,
       membershipPlans,
       clientMemberships,
     }
-  }, [clients, services, products, staff, attendance, templates, followUps, bills, expenses, staffAdvances, settings, membershipPlans, clientMemberships])
+  }, [clients, services, products, staff, attendance, templates, followUps, bills, expenses, staffAdvances, dismissedAutoExpenses, settings, membershipPlans, clientMemberships])
 
   const restoreBackup = useCallback((data) => {
     if (data.clients) setClients(data.clients)
@@ -1027,6 +1084,7 @@ export function AppProvider({ children }) {
     if (data.followUps) setFollowUps(data.followUps)
     if (data.expenses) setExpenses(data.expenses)
     if (data.staffAdvances) setStaffAdvances(data.staffAdvances)
+    if (data.dismissedAutoExpenses) setDismissedAutoExpenses(data.dismissedAutoExpenses)
     if (data.bills) {
       setBills(data.bills)
       // `bills` is intentionally excluded from the generic auto-sync effect
@@ -1092,6 +1150,7 @@ export function AppProvider({ children }) {
     staffAdvances,
     addStaffAdvance,
     deleteStaffAdvance,
+    unlinkStaffAdvance,
     createBill,
     updateBill,
     deleteBill,

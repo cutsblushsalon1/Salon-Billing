@@ -17,10 +17,21 @@ import {
   Package,
   Crown,
   HandCoins,
+  Globe,
+  EyeOff,
 } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, Modal, EmptyState, Badge } from '../components/ui.jsx'
-import { formatCurrency, formatDate, uid, isSameMonth, calcBillItemRevenue, capitalizeWordsPreserveSpaces, formatPhoneDisplay } from '../utils/helpers.js'
+import {
+  formatCurrency,
+  formatDate,
+  uid,
+  isSameMonth,
+  calcBillItemRevenue,
+  capitalizeWordsPreserveSpaces,
+  formatPhoneDisplay,
+  getStaffSalaryStatus,
+} from '../utils/helpers.js'
 import { downloadAttendanceExcel } from '../utils/excel.js'
 
 const ADVANCE_PAYMENT_METHODS = ['Cash', 'UPI', 'Card', 'Bank Transfer', 'Other']
@@ -34,6 +45,7 @@ const emptyForm = {
   productCommissionPercent: '10',
   salary: '',
   joinedAt: '',
+  showOnBookingSite: true,
 }
 const STATUS_OPTIONS = ['Present', 'Absent', 'Half Day', 'Leave']
 const STATUS_TONE = { Present: 'success', Absent: 'danger', 'Half Day': 'brass', Leave: 'muted' }
@@ -155,6 +167,9 @@ export default function Staff() {
       productCommissionPercent: s.productCommissionPercent ?? s.commissionPercent ?? '10',
       salary: s.salary ?? '',
       joinedAt: s.joinedAt || '',
+      // Older staff records won't have this field at all - treat that as
+      // "shown", same as the publish filter in AppContext does.
+      showOnBookingSite: s.showOnBookingSite !== false,
     })
     setEditingId(s.id)
     setModalOpen(true)
@@ -172,6 +187,7 @@ export default function Staff() {
       salary: Number(form.salary) || 0,
       joinedAt: form.joinedAt || todayISO(),
       active: editingId ? staff.find((s) => s.id === editingId)?.active ?? true : true,
+      showOnBookingSite: !!form.showOnBookingSite,
     })
     setModalOpen(false)
   }
@@ -260,7 +276,14 @@ export default function Staff() {
                           </p>
                         </div>
                       </div>
-                      <Badge tone={s.active ? 'success' : 'muted'}>{s.active ? 'Active' : 'Inactive'}</Badge>
+                      <div className="flex flex-col items-end gap-1">
+                        <Badge tone={s.active ? 'success' : 'muted'}>{s.active ? 'Active' : 'Inactive'}</Badge>
+                        {s.showOnBookingSite === false && (
+                          <span className="text-[10px] text-muted flex items-center gap-1" title="Hidden from the Salon Site's staff picker">
+                            <EyeOff size={10} /> Not on site
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     <div className="flex items-center gap-2 mb-3 flex-wrap">
@@ -340,6 +363,17 @@ export default function Staff() {
                         </p>
                         <p className="font-semibold text-ink tabular">
                           {formatCurrency(advanceTotalsByStaff[s.id] || 0, settings.currencySymbol)}
+                        </p>
+                      </div>
+                      <div className="bg-black/[0.02] rounded-lg p-2.5">
+                        <p className="text-muted mb-0.5 flex items-center gap-1">
+                          <Wallet size={11} /> Net payable
+                        </p>
+                        <p className="font-semibold text-ink tabular">
+                          {formatCurrency(
+                            getStaffSalaryStatus(s, staffAdvances, settings).netPayable,
+                            settings.currencySymbol,
+                          )}
                         </p>
                       </div>
                       <div className="bg-black/[0.02] rounded-lg p-2.5">
@@ -523,6 +557,21 @@ export default function Staff() {
           <div>
             <label className="label">Joining date</label>
             <input className="input" type="date" value={form.joinedAt} onChange={(e) => setForm((s) => ({ ...s, joinedAt: e.target.value }))} />
+          </div>
+          <div className="rounded-lg bg-black/[0.02] p-3">
+            <label className="flex items-center gap-2.5 cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={form.showOnBookingSite}
+                onChange={(e) => setForm((s) => ({ ...s, showOnBookingSite: e.target.checked }))}
+              />
+              <span>
+                <span className="text-sm font-medium text-ink">
+                  Show on booking website
+                </span>
+              </span>
+            </label>
           </div>
           <div className="flex items-center justify-end gap-2 pt-2">
             <button onClick={() => setModalOpen(false)} className="btn-ghost">
