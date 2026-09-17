@@ -654,7 +654,7 @@ export function AppProvider({ children }) {
         // joining date against this month's pay day - someone added AFTER
         // the pay day hasn't completed a pay cycle yet, so they're skipped
         // this run and picked up automatically next month instead.
-        const status = getStaffSalaryStatus(s, staffAdvancesRef.current, settings, today)
+        const status = getStaffSalaryStatus(s, staffAdvancesRef.current, settings, today, new Date(year, month, clampDay(settings.autoSalaryExpenseDay)))
         if (!status.eligibleThisCycle) return
         generated.push({
           id: `auto_salary_${s.id}_${monthKey}`,

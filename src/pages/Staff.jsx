@@ -71,11 +71,16 @@ export default function Staff() {
   const [advanceModalOpen, setAdvanceModalOpen] = useState(false)
   const [advanceForm, setAdvanceForm] = useState(emptyAdvanceForm)
 
-  // Total advance amount each staff member has been given, so it's visible
-  // right on their card without switching to the Advances tab.
+  // Show only advances given in the current calendar month on staff cards.
+  // Lifetime advance history remains available in the Advances tab.
   const advanceTotalsByStaff = useMemo(() => {
     const map = {}
+    const now = new Date()
+    const year = now.getFullYear()
+    const month = now.getMonth()
     staffAdvances.forEach((a) => {
+      const d = new Date(a.date)
+      if (Number.isNaN(d.getTime()) || d.getFullYear() !== year || d.getMonth() !== month) return
       map[a.staffId] = (map[a.staffId] || 0) + (Number(a.amount) || 0)
     })
     return map
@@ -367,7 +372,7 @@ export default function Staff() {
                       </div>
                       <div className="bg-black/[0.02] rounded-lg p-2.5">
                         <p className="text-muted mb-0.5 flex items-center gap-1">
-                          <Wallet size={11} /> Net payable
+                          <Wallet size={11} /> Next salary payable
                         </p>
                         <p className="font-semibold text-ink tabular">
                           {formatCurrency(
@@ -728,9 +733,16 @@ function AdvancesTab({ onGiveAdvance }) {
   const { staff, staffAdvances, deleteStaffAdvance, settings } = useApp()
   const [staffFilter, setStaffFilter] = useState('All')
 
+  // Outstanding/display total is scoped to the current calendar month.
+  // Older advances are still retained in the log for audit/history.
   const totalsByStaff = useMemo(() => {
     const map = {}
+    const now = new Date()
+    const year = now.getFullYear()
+    const month = now.getMonth()
     staffAdvances.forEach((a) => {
+      const d = new Date(a.date)
+      if (Number.isNaN(d.getTime()) || d.getFullYear() !== year || d.getMonth() !== month) return
       map[a.staffId] = (map[a.staffId] || 0) + (Number(a.amount) || 0)
     })
     return map

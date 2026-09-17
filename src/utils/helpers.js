@@ -74,47 +74,102 @@ export function clampDayToMonth(day, year, month) {
 }
 
 // Everything needed to know (and show) where a staff member's automatic
-// salary stands for the month containing `referenceDate` (defaults to
-// now): whether they've been employed for enough of this month's pay
-// cycle to be included in it at all, how much of their salary is already
-// covered by advances given this month, and what's left to pay.
+// Salary is paid on a configured day each month. Advances are assigned to the
+// first salary cycle whose pay date is on/after the advance date. This is
+// important: an advance paid AFTER this month's salary date must reduce NEXT
+// month's salary, not the salary that has already been paid.
 //
-// A staff member who joined AFTER this month's automatic salary day isn't
-// eligible for a salary run this cycle - their first automatic salary
-// starts next month instead of a partial/back-dated one now. Shared by
-// AppContext's ensureAutomaticMonthlyExpenses (which decides whether to
-// generate the expense) and the Staff page (which shows this to the
-// user), so the two can never disagree with each other.
-export function getStaffSalaryStatus(staffMember, staffAdvances = [], settings = {}, referenceDate = new Date()) {
-  const year = referenceDate.getFullYear()
-  const month = referenceDate.getMonth()
-  const payDay = clampDayToMonth(settings.autoSalaryExpenseDay, year, month)
+// Example (salary day = 1):
+//   Sep 1 salary cycle + advance on Sep 1 -> September salary
+//   Sep 2 advance -> October salary
+//   Oct 1 advance -> October salary
+export function getSalaryCycleDate(date, settings = {}) {
+  const source = date instanceof Date ? new Date(date) : new Date(date)
+  if (Number.isNaN(source.getTime())) return null
+
+  const requestedDay = Math.min(31, Math.max(1, Number(settings.autoSalaryExpenseDay) || 1))
+  const dayThisMonth = clampDayToMonth(requestedDay, source.getFullYear(), source.getMonth())
+  const thisMonthPayDate = new Date(source.getFullYear(), source.getMonth(), dayThisMonth)
+  thisMonthPayDate.setHours(0, 0, 0, 0)
+
+  // On payday, the advance belongs to today's cycle. After payday it belongs
+  // to the next cycle.
+  if (source <= thisMonthPayDate) return thisMonthPayDate
+
+  return new Date(
+    source.getFullYear(),
+    source.getMonth() + 1,
+    clampDayToMonth(requestedDay, source.getFullYear(), source.getMonth() + 1),
+  )
+}
+
+export function getStaffSalaryStatus(
+  staffMember,
+  staffAdvances = [],
+  settings = {},
+  referenceDate = new Date(),
+  targetPayDate = null,
+) {
+  const reference = referenceDate instanceof Date ? new Date(referenceDate) : new Date(referenceDate)
+  const requestedDay = Math.min(31, Math.max(1, Number(settings.autoSalaryExpenseDay) || 1))
+
+  // When targetPayDate is supplied (used by automatic expense generation),
+  // calculate exactly that salary cycle. Otherwise show the next upcoming
+  // salary cycle from the user's current date.
+  const cycleDate = targetPayDate
+    ? new Date(targetPayDate)
+    : getSalaryCycleDate(reference, settings)
+
+  cycleDate.setHours(0, 0, 0, 0)
+  const cycleYear = cycleDate.getFullYear()
+  const cycleMonth = cycleDate.getMonth()
+  const payDay = clampDayToMonth(requestedDay, cycleYear, cycleMonth)
+
   const grossSalary = Number(staffMember?.salary) || 0
 
-  const advancesThisMonth = (staffAdvances || [])
+  const advancesForCycle = (staffAdvances || [])
     .filter((a) => a.staffId === staffMember?.id)
     .filter((a) => {
-      const d = new Date(a.date)
-      return d.getFullYear() === year && d.getMonth() === month
+      const advanceDate = new Date(a.date)
+      if (Number.isNaN(advanceDate.getTime())) return false
+      const advanceCycle = getSalaryCycleDate(advanceDate, settings)
+      return (
+        advanceCycle &&
+        advanceCycle.getFullYear() === cycleYear &&
+        advanceCycle.getMonth() === cycleMonth &&
+        advanceCycle.getDate() === payDay
+      )
     })
-    .reduce((sum, a) => sum + (Number(a.amount) || 0), 0)
+
+  const advancesThisCycle = advancesForCycle.reduce((sum, a) => sum + (Number(a.amount) || 0), 0)
 
   let eligibleThisCycle = true
   const joined = staffMember?.joinedAt ? new Date(staffMember.joinedAt) : null
   if (joined && !Number.isNaN(joined.getTime())) {
-    if (joined > referenceDate) {
-      eligibleThisCycle = false
-    } else if (joined.getFullYear() === year && joined.getMonth() === month && joined.getDate() > payDay) {
-      eligibleThisCycle = false
-    }
+    joined.setHours(0, 0, 0, 0)
+    // Staff who join after a salary cycle's pay date start from the next cycle.
+    if (joined > cycleDate) eligibleThisCycle = false
   }
 
-  const netPayable = eligibleThisCycle ? Math.max(0, grossSalary - advancesThisMonth) : 0
-  const nextPayDate = eligibleThisCycle
-    ? new Date(year, month, payDay)
-    : new Date(year, month + 1, clampDayToMonth(settings.autoSalaryExpenseDay, year, month + 1))
+  const netPayable = eligibleThisCycle ? Math.max(0, grossSalary - advancesThisCycle) : 0
 
-  return { grossSalary, advancesThisMonth, netPayable, eligibleThisCycle, payDay, nextPayDate }
+  const previousCycleDate = new Date(cycleYear, cycleMonth - 1, clampDayToMonth(requestedDay, cycleYear, cycleMonth - 1))
+  const nextPayDate = new Date(cycleYear, cycleMonth + 1, clampDayToMonth(requestedDay, cycleYear, cycleMonth + 1))
+
+  return {
+    grossSalary,
+    advancesThisMonth: advancesThisCycle, // backwards-compatible property name
+    advancesThisCycle,
+    netPayable,
+    eligibleThisCycle,
+    payDay,
+    payDate: cycleDate,
+    nextPayDate,
+    nextCycleDate: nextPayDate,
+    previousCycleDate,
+    cycleKey: `${cycleYear}-${String(cycleMonth + 1).padStart(2, '0')}`,
+    cycleLabel: cycleDate.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }),
+  }
 }
 
 export function buildInvoiceNumber(prefix, counter) {
