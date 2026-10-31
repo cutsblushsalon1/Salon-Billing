@@ -88,7 +88,7 @@ export default function NewBill() {
   // 'bill' = a normal bill. 'advance' = take an advance now and book the
   // client in; the final bill is generated later from Advance Bookings.
   const [mode, setMode] = useState('bill')
-  const [advanceForm, setAdvanceForm] = useState({ date: todayStr(), time: '', amount: '', method: 'Cash', notes: '' })
+  const [advanceForm, setAdvanceForm] = useState({ bookingDate: todayStr(), date: todayStr(), time: '', amount: '', method: 'Cash', notes: '' })
   const [generatedReceipt, setGeneratedReceipt] = useState(null)
   // The advance booking currently being turned into a final bill, if any.
   const [finalising, setFinalising] = useState(null)
@@ -397,8 +397,10 @@ export default function NewBill() {
 
   const advanceAmountNum = Number(advanceForm.amount) || 0
   const advanceError = (() => {
+    if (!advanceForm.bookingDate) return 'Pick the booking date.'
+    if (advanceForm.bookingDate > todayStr()) return 'The booking date can\u2019t be in the future.'
     if (!advanceForm.date) return 'Pick the appointment date.'
-    if (advanceForm.date < todayStr()) return 'The appointment date can\u2019t be in the past.'
+    if (advanceForm.date < advanceForm.bookingDate) return 'The appointment can\u2019t be before the booking date.'
     if (!(advanceAmountNum > 0)) return 'Enter the advance amount received.'
     if (advanceAmountNum > totals.total) return 'The advance can\u2019t be more than the estimated total.'
     if (!selectedClient && !(showNewClientForm && newClient.name.trim())) return 'Select or add the client — an advance booking needs a client.'
@@ -408,7 +410,13 @@ export default function NewBill() {
   function handleGenerateAdvance() {
     if (cart.length === 0 || advanceError) return
     const client = resolveClient()
+    // Booking date = the day the advance was received (can be backdated).
+    // Keep the current time of day so receipts sort sensibly.
+    const [by, bm, bd] = advanceForm.bookingDate.split('-').map(Number)
+    const createdAt = new Date()
+    createdAt.setFullYear(by, bm - 1, bd)
     const booking = createAdvanceBooking({
+      createdAt: createdAt.toISOString(),
       client: { id: client.id, name: capitalizeWordsPreserveSpaces(client.name), phone: client.phone },
       gender: client.gender || '',
       scheduledDate: advanceForm.date,
@@ -440,7 +448,7 @@ export default function NewBill() {
     setGeneratedReceipt(null)
     setFinalising(null)
     setMode('bill')
-    setAdvanceForm({ date: todayStr(), time: '', amount: '', method: 'Cash', notes: '' })
+    setAdvanceForm({ bookingDate: todayStr(), date: todayStr(), time: '', amount: '', method: 'Cash', notes: '' })
   }
 
   const canGenerate = cart.length > 0 && cart.every((c) => getItemStaff(c).some((st) => st.id))
@@ -748,11 +756,21 @@ export default function NewBill() {
               <p className="font-display text-lg text-ink mb-4">3. Booking &amp; advance payment</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
+                  <label className="label">Booking date (advance received on)</label>
+                  <input
+                    type="date"
+                    className="input"
+                    max={todayStr()}
+                    value={advanceForm.bookingDate}
+                    onChange={(e) => setAdvanceForm((f) => ({ ...f, bookingDate: e.target.value }))}
+                  />
+                </div>
+                <div>
                   <label className="label">Appointment date</label>
                   <input
                     type="date"
                     className="input"
-                    min={todayStr()}
+                    min={advanceForm.bookingDate || todayStr()}
                     value={advanceForm.date}
                     onChange={(e) => setAdvanceForm((f) => ({ ...f, date: e.target.value }))}
                   />

@@ -608,4 +608,5 @@ This project is private/proprietary unless a separate license is added by the pr
 - **Gender-aware services** — billing a male/female client shows only that gender's services (plus Unisex); override with the chips above the list.
 - **Advance receipts on WhatsApp** — Settings → *Advance booking WhatsApp sending*: manual (wa.me with a receipt link) or automatic via your approved template (5 variables), same as invoices.
 - **Dashboard cash basis** — an advance counts on the day it was received; the final bill counts only the balance on the finalising day.
+- **Backdated advance** — advance bookings have a "Booking date (advance received on)" picker; the Dashboard counts the advance on that date.
 - **Book appointment** — Appointments → *Book appointment* for phone/walk-in bookings (optional WhatsApp confirmation). Re-run `supabase/appointment_notifications.sql` so manual bookings don't trigger the new-request push.
