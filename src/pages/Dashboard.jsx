@@ -15,10 +15,10 @@ import {
 } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { StatCard, PageHeader, EmptyState, Badge } from '../components/ui.jsx'
-import { formatCurrency, formatDateTime, isSameDay, isSameMonth, daysSince, getBillPaymentSplit } from '../utils/helpers.js'
+import { formatCurrency, formatDateTime, isSameDay, isSameMonth, daysSince, getBillCashSplit, getBillCashAmount, getAdvanceCashEntries } from '../utils/helpers.js'
 
 export default function Dashboard() {
-  const { bills, clients, settings, products, followUps, clientMemberships } = useApp()
+  const { bills, clients, settings, products, followUps, clientMemberships, advanceBookings } = useApp()
   const navigate = useNavigate()
   const today = new Date()
 
@@ -31,8 +31,17 @@ export default function Dashboard() {
   const todayMemberships = clientMemberships.filter((m) => isSameDay(m.enrolledAt, today))
   const monthMemberships = clientMemberships.filter((m) => isSameMonth(m.enrolledAt, today))
 
-  const todayBillRevenue = todayBills.reduce((s, b) => s + b.total, 0)
-  const monthBillRevenue = monthBills.reduce((s, b) => s + b.total, 0)
+  // Money is counted on the day it was RECEIVED: an advance on the day the
+  // booking was made, and the balance (bill total minus advance) on the day
+  // the bill is finalised - so the same money is never counted twice.
+  const advanceEntries = useMemo(() => getAdvanceCashEntries(advanceBookings), [advanceBookings])
+  const todayAdvances = advanceEntries.filter((e) => isSameDay(e.date, today))
+  const monthAdvances = advanceEntries.filter((e) => isSameMonth(e.date, today))
+  const todayAdvanceRevenue = todayAdvances.reduce((s, e) => s + e.amount, 0)
+  const monthAdvanceRevenue = monthAdvances.reduce((s, e) => s + e.amount, 0)
+
+  const todayBillRevenue = todayBills.reduce((s, b) => s + getBillCashAmount(b), 0) + todayAdvanceRevenue
+  const monthBillRevenue = monthBills.reduce((s, b) => s + getBillCashAmount(b), 0) + monthAdvanceRevenue
   const todayMembershipRevenue = todayMemberships.reduce((s, m) => s + (Number(m.amountPaid) || 0), 0)
   const monthMembershipRevenue = monthMemberships.reduce((s, m) => s + (Number(m.amountPaid) || 0), 0)
 
@@ -44,19 +53,18 @@ export default function Dashboard() {
   // don't record a payment method). "Bank" groups every non-cash method
   // — UPI, Card, Bank Transfer, and Other — since all of those land in
   // the bank account rather than the till.
-  const splitCashBank = (billList) =>
-    billList.reduce(
-      (acc, b) => {
-        getBillPaymentSplit(b).forEach(({ method, amount }) => {
-          if (method === 'Cash') acc.cash += amount
-          else acc.bank += amount
-        })
-        return acc
-      },
-      { cash: 0, bank: 0 },
-    )
-  const todayCashBank = splitCashBank(todayBills)
-  const monthCashBank = splitCashBank(monthBills)
+  const splitCashBank = (billList, advanceList) => {
+    const acc = { cash: 0, bank: 0 }
+    const add = (method, amount) => {
+      if (method === 'Cash') acc.cash += amount
+      else acc.bank += amount
+    }
+    billList.forEach((b) => getBillCashSplit(b).forEach(({ method, amount }) => add(method, amount)))
+    advanceList.forEach((e) => add(e.method, e.amount))
+    return acc
+  }
+  const todayCashBank = splitCashBank(todayBills, todayAdvances)
+  const monthCashBank = splitCashBank(monthBills, monthAdvances)
 
   const maleClients = clients.filter((c) => c.gender === 'Male').length
   const femaleClients = clients.filter((c) => c.gender === 'Female').length
@@ -68,14 +76,18 @@ export default function Dashboard() {
       const d = new Date()
       d.setDate(d.getDate() - i)
       const dayBills = bills.filter((b) => isSameDay(b.date, d))
+      const dayAdvances = advanceEntries.filter((e) => isSameDay(e.date, d))
       const dayMemberships = clientMemberships.filter((m) => isSameDay(m.enrolledAt, d))
       days.push({
         date: d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
-        revenue: dayBills.reduce((s, b) => s + b.total, 0) + dayMemberships.reduce((s, m) => s + (Number(m.amountPaid) || 0), 0),
+        revenue:
+          dayBills.reduce((s, b) => s + getBillCashAmount(b), 0) +
+          dayAdvances.reduce((s, e) => s + e.amount, 0) +
+          dayMemberships.reduce((s, m) => s + (Number(m.amountPaid) || 0), 0),
       })
     }
     return days
-  }, [bills, clientMemberships])
+  }, [bills, clientMemberships, advanceEntries])
 
   const popularServices = useMemo(() => {
     const map = {}
@@ -126,6 +138,10 @@ export default function Dashboard() {
           value={formatCurrency(todayRevenue, settings.currencySymbol)}
           icon={IndianRupee}
           trend={`${todayBills.length} bill${todayBills.length === 1 ? '' : 's'}${
+            todayAdvances.length
+              ? ` · ${formatCurrency(todayAdvanceRevenue, settings.currencySymbol)} advance (${todayAdvances.length})`
+              : ''
+          }${
             todayMemberships.length ? ` · ${todayMemberships.length} membership${todayMemberships.length === 1 ? '' : 's'}` : ''
           }`}
           accent="brass"
@@ -135,6 +151,10 @@ export default function Dashboard() {
           value={formatCurrency(monthRevenue, settings.currencySymbol)}
           icon={TrendingUp}
           trend={`${monthBills.length} bill${monthBills.length === 1 ? '' : 's'}${
+            monthAdvances.length
+              ? ` · ${formatCurrency(monthAdvanceRevenue, settings.currencySymbol)} advance (${monthAdvances.length})`
+              : ''
+          }${
             monthMemberships.length ? ` · ${monthMemberships.length} membership${monthMemberships.length === 1 ? '' : 's'}` : ''
           }`}
           accent="plum"
@@ -259,6 +279,11 @@ export default function Dashboard() {
                   </div>
                   <div className="text-right shrink-0">
                     <p className="text-sm font-semibold tabular text-ink">{formatCurrency(b.total, settings.currencySymbol)}</p>
+                    {Number(b.advancePaid) > 0 && (
+                      <p className="text-[11px] text-muted">
+                        {formatCurrency(getBillCashAmount(b), settings.currencySymbol)} today + {formatCurrency(b.advancePaid, settings.currencySymbol)} advance
+                      </p>
+                    )}
                     <Badge tone="success">{b.paymentMethod}</Badge>
                   </div>
                 </div>
@@ -270,7 +295,7 @@ export default function Dashboard() {
         <div className="space-y-6">
           <div className="card p-5 sm:p-6">
             <p className="font-display text-lg text-ink mb-1">Cash vs. Bank</p>
-            <p className="text-xs text-muted mb-4">Bank = UPI + Card + Bank Transfer + Other. From bills only.</p>
+            <p className="text-xs text-muted mb-4">Bank = UPI + Card + Bank Transfer + Other. Bills plus advance payments, on the day received.</p>
             <div className="grid grid-cols-2 gap-5">
               <CashBankSplit
                 label="Today"

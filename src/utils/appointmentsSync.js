@@ -103,3 +103,20 @@ export async function releaseAppointmentReminder(id) {
     // best effort
   }
 }
+
+// Front-desk (manual) booking: unlike website bookings, this app inserts the
+// row itself. Allowed by the existing "Public can create appointments"
+// policy, which covers signed-in users too. Returns { ok: true, row } or
+// { ok: false, error }. Never throws.
+export async function insertAppointmentRemote(row) {
+  if (!isSupabaseConfigured) {
+    return { ok: false, error: 'Supabase isn’t configured, so appointments can’t be saved.' }
+  }
+  try {
+    const { data, error } = await supabase.from('appointments').insert(row).select().single()
+    if (error) return { ok: false, error: error.message }
+    return { ok: true, row: data }
+  } catch (err) {
+    return { ok: false, error: 'Couldn’t reach the server. Check your connection and try again.' }
+  }
+}

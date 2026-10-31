@@ -6,6 +6,11 @@ declare
   ntfy_topic text := 'CutsBlushSalonAppointmentsNotification';
   msg text;
 begin
+  -- Appointments booked by the front desk inside the billing app don't need a push.
+  if new.source = 'manual' then
+    return new;
+  end if;
+
   msg := coalesce(new.client_name, 'A customer') || ' wants ' || coalesce(new.service_name, 'a service')
     || case when new.gender is not null then ' (for ' || new.gender || ')' else '' end
     || case when new.staff_name is not null then ' with ' || new.staff_name else '' end

@@ -814,22 +814,88 @@ export function advanceBookingToReceipt(booking) {
   }
 }
 
+// "3 Nov 2026 at 4:30 PM" - used in the advance messages.
+export function formatAdvanceWhen(booking) {
+  return `${formatInvoiceTemplateDate(booking.scheduledDate + 'T00:00:00')}${
+    booking.scheduledTime ? ` at ${formatTimeLabel(booking.scheduledTime)}` : ''
+  }`
+}
+
+// Manual (wa.me) advance message - short, with a public link to the receipt
+// (same /invoice/:no page invoices use), like whatsappInvoiceMessage.
 export function whatsappAdvanceMessage(settings, booking) {
   const name = booking.client?.name || 'there'
-  const when = `${formatDate(booking.scheduledDate)}${booking.scheduledTime ? ` at ${formatTimeLabel(booking.scheduledTime)}` : ''}`
+  const receiptNo = booking.receiptNo || booking.billNo
+  const balance = Math.max(0, (Number(booking.total) || 0) - (Number(booking.advanceAmount) || 0))
   const lines = [
     `Hello ${name}, thank you for booking with *${settings.salonName}*!`,
     ``,
-    `Advance receipt *${booking.receiptNo}*`,
-    `Appointment: *${when}*`,
-    `Estimated total: ${formatCurrency(booking.total, settings.currencySymbol)}`,
+    `Your appointment is booked for *${formatAdvanceWhen(booking)}*.`,
+    ``,
+    `Advance receipt *${receiptNo}*:`,
+    invoicePublicLink(receiptNo),
+    ``,
     `Advance paid: *${formatCurrency(booking.advanceAmount, settings.currencySymbol)}*`,
-    `Balance due at the salon: *${formatCurrency(Math.max(0, booking.total - booking.advanceAmount), settings.currencySymbol)}*`,
+    `Balance due at the salon: *${formatCurrency(balance, settings.currencySymbol)}*`,
     ``,
     `See you soon!`,
-    `— Team ${settings.salonName}`,
+    `\u2014 Team ${settings.salonName}`,
   ]
   return lines.join('\n')
+}
+
+// Dynamic values for the approved "advance booking receipt" WhatsApp
+// template, built from the booking (same approach as the invoice template):
+//   {{1}} name, {{2}} receipt number, {{3}} appointment date & time,
+//   {{4}} advance paid, {{5}} balance due
+// plus, only if the template has a "View Receipt" URL button (Settings),
+// the button's {{1}} = the receipt number.
+export function buildAdvanceTemplateParams(settings, booking) {
+  const receiptNo = booking.receiptNo || booking.billNo
+  const balance = Math.max(0, (Number(booking.total) || 0) - (Number(booking.advanceAmount) || 0))
+  return {
+    body: [
+      booking.client?.name || 'there',
+      receiptNo,
+      formatAdvanceWhen(booking),
+      formatCurrency(booking.advanceAmount, settings.currencySymbol),
+      formatCurrency(balance, settings.currencySymbol),
+    ],
+    buttonParams: settings.advanceTemplateHasButton ? { 0: receiptNo } : {},
+  }
+}
+
+// ---------------------------------------------------------------------
+// Cash-basis figures (Dashboard)
+// ---------------------------------------------------------------------
+
+// What a bill actually brought in ON ITS OWN DATE. A bill that settled an
+// advance only collects the balance that day - the advance was already
+// counted on the day it was received (see getAdvanceCashEntries). May be
+// negative if the advance exceeded the bill (a refund goes back).
+export function getBillCashSplit(bill) {
+  const total = Number(bill.total) || 0
+  const advance = Number(bill.advancePaid) || 0
+  return [{ method: bill.paymentMethod, amount: Math.round((total - advance) * 100) / 100 }]
+}
+
+export function getBillCashAmount(bill) {
+  return getBillCashSplit(bill).reduce((s, p) => s + p.amount, 0)
+}
+
+// Advance payments as money received on the booking date. A booking that was
+// cancelled AND had its advance refunded is dropped; a cancelled booking
+// whose advance was kept still counts as income.
+export function getAdvanceCashEntries(bookings) {
+  return (bookings || [])
+    .filter((b) => !(b.status === 'cancelled' && b.advanceRefunded))
+    .map((b) => ({
+      id: b.id,
+      date: b.createdAt,
+      method: b.advanceMethod,
+      amount: Number(b.advanceAmount) || 0,
+      booking: b,
+    }))
 }
 
 // ---------------------------------------------------------------------

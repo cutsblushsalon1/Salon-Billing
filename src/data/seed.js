@@ -500,6 +500,14 @@ export const defaultSettings = {
   // Advance booking receipts (ADV-0001, ADV-0002...) - own counter, separate
   // from the invoice counter.
   advanceCounter: 1,
+  // Advance booking receipt WhatsApp sending - off (manual wa.me) by default,
+  // same pattern as Invoice WhatsApp sending. Set advanceTemplateHasButton if
+  // your approved template has a "View Receipt" URL button (base URL
+  // ending in /invoice/{{1}}).
+  advanceApiEnabled: false,
+  advanceTemplateName: 'advance_booking_receipt',
+  advanceTemplateLanguage: 'en',
+  advanceTemplateHasButton: false,
 }
 
 export const seedTemplates = [

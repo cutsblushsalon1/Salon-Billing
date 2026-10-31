@@ -22,7 +22,7 @@
 //     an accurate on-screen preview - optional, sending still works
 //     with just the template name typed in by hand.
 
-import { formatPhoneE164, buildInvoiceTemplateParams, buildMembershipTemplateParams, buildFollowUpApiTemplateParams, buildAppointmentTemplateParams } from './helpers.js'
+import { formatPhoneE164, buildInvoiceTemplateParams, buildMembershipTemplateParams, buildFollowUpApiTemplateParams, buildAppointmentTemplateParams, buildAdvanceTemplateParams } from './helpers.js'
 
 export function isCrmConnectionConfigured(settings) {
   return !!(settings.whatsappCrmBaseUrl && settings.whatsappCrmApiKey)
@@ -34,6 +34,10 @@ export function isInvoiceApiConfigured(settings) {
 
 export function isMembershipApiConfigured(settings) {
   return !!(settings.membershipApiEnabled && isCrmConnectionConfigured(settings) && settings.membershipTemplateName)
+}
+
+export function isAdvanceApiConfigured(settings) {
+  return !!(settings.advanceApiEnabled && isCrmConnectionConfigured(settings) && settings.advanceTemplateName)
 }
 
 export function isFollowUpApiConfigured(settings) {
@@ -148,6 +152,23 @@ export async function sendMembershipViaCloudApi(settings, membership, plan) {
     templateLanguage: settings.membershipTemplateLanguage,
     body,
     buttonParams: {},
+  })
+}
+
+// Advance-booking receipt wrapper: takes the receipt-shaped booking (see
+// advanceBookingToReceipt in utils/helpers.js), same pattern as invoices.
+export async function sendAdvanceViaCloudApi(settings, receipt) {
+  if (!isAdvanceApiConfigured(settings)) {
+    return { ok: false, error: 'Advance booking WhatsApp sending is not fully configured in Settings.' }
+  }
+  const { body, buttonParams } = buildAdvanceTemplateParams(settings, receipt)
+  return sendTemplateViaCloudApi(settings, {
+    to: formatPhoneE164(receipt.client?.phone),
+    contactName: receipt.client?.name,
+    templateName: settings.advanceTemplateName,
+    templateLanguage: settings.advanceTemplateLanguage,
+    body,
+    buttonParams,
   })
 }
 

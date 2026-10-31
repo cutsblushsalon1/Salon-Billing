@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { CalendarClock, Check, X, Trash2, ReceiptText, Phone, RefreshCw, CalendarCheck2, MessageCircle, Loader2, CircleCheck, CircleX } from 'lucide-react'
+import { CalendarClock, Check, X, Trash2, ReceiptText, Phone, RefreshCw, CalendarCheck2, MessageCircle, Loader2, CircleCheck, CircleX, Plus } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, EmptyState, Badge, StatCard } from '../components/ui.jsx'
+import ManualAppointmentModal from '../components/ManualAppointmentModal.jsx'
 import { formatDate, formatPhoneDisplay } from '../utils/helpers.js'
 import { isAppointmentConfirmApiConfigured, isAppointmentReminderApiConfigured } from '../utils/whatsappCloudApi.js'
 
@@ -32,6 +33,7 @@ export default function Appointments() {
   // id of the appointment whose message is being sent, and the latest result
   // of a confirm / resend to show in the banner.
   const [sendingId, setSendingId] = useState(null)
+  const [showBook, setShowBook] = useState(false)
   const [notice, setNotice] = useState(null) // { tone: 'ok' | 'error' | 'info', text }
   const confirmMessagesOn = isAppointmentConfirmApiConfigured(settings)
   const reminderOn = isAppointmentReminderApiConfigured(settings)
@@ -89,7 +91,12 @@ export default function Appointments() {
       <PageHeader
         eyebrow="Front Desk"
         title="Appointments"
-        subtitle="Bookings made by customers on your salon website appear here automatically."
+        subtitle="Bookings made on your salon website appear here automatically. You can also book one yourself."
+        actions={
+          <button onClick={() => setShowBook(true)} className="btn-primary">
+            <Plus size={15} /> Book appointment
+          </button>
+        }
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
@@ -163,6 +170,7 @@ export default function Appointments() {
                   <tr key={a.id} className="hover:bg-black/[0.015]">
                     <td className="px-5 py-3.5 font-medium text-ink">
                       {a.client_name}
+                      {a.source === 'manual' && <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-plum bg-plum/10 rounded-full px-1.5 py-0.5">Manual</span>}
                       {a.phone && (
                         <span className="flex items-center gap-1 text-xs text-muted font-normal mt-0.5">
                           <Phone size={11} /> {formatPhoneDisplay(a.phone)}
@@ -242,6 +250,12 @@ export default function Appointments() {
           </div>
         </div>
       )}
+
+      <ManualAppointmentModal
+        open={showBook}
+        onClose={() => setShowBook(false)}
+        onBooked={(text, ok) => setNotice({ tone: ok ? 'ok' : 'error', text })}
+      />
 
       {confirmDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">

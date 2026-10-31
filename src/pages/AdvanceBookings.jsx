@@ -4,6 +4,7 @@ import { CalendarPlus, CalendarClock, Wallet, Eye, ReceiptText, X, Trash2, Print
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, EmptyState, Badge, StatCard, Modal } from '../components/ui.jsx'
 import BillPreview from '../components/BillPreview.jsx'
+import InvoiceWhatsAppButton from '../components/InvoiceWhatsAppButton.jsx'
 import {
   formatCurrency,
   formatDate,
@@ -187,6 +188,7 @@ export default function AdvanceBookings() {
                           <button onClick={() => setViewBooking(b)} className="p-1.5 text-muted hover:text-plum" title="View receipt">
                             <Eye size={15} />
                           </button>
+                          <InvoiceWhatsAppButton bill={advanceBookingToReceipt(b)} settings={settings} kind="advance" variant="icon" />
                           {b.status === 'booked' && (
                             <>
                               <button onClick={() => finalise(b)} className="p-1.5 text-muted hover:text-success" title="Finalise bill">
@@ -227,6 +229,7 @@ export default function AdvanceBookings() {
               <button onClick={() => downloadBillPDF(advanceBookingToReceipt(viewBooking), settings)} className="btn-ghost">
                 <Download size={15} /> Download PDF
               </button>
+              <InvoiceWhatsAppButton bill={advanceBookingToReceipt(viewBooking)} settings={settings} kind="advance" />
               {viewBooking.status === 'booked' && (
                 <button
                   onClick={() => {

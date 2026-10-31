@@ -61,7 +61,7 @@ export default function PublicInvoice() {
           </div>
         </div>
 
-        {settings.googleReviewLink ? (
+        {settings.googleReviewLink && !bill.isAdvanceReceipt ? (
           <div className="grid grid-cols-2 gap-3 mt-5 max-w-sm mx-auto sm:flex sm:justify-center sm:max-w-none">
             <a
               href={settings.googleReviewLink}

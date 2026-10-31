@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { Share2, Loader2, CircleCheck, CircleX } from 'lucide-react'
-import { whatsappInvoiceMessage, whatsappLink } from '../utils/helpers.js'
-import { isInvoiceApiConfigured, sendInvoiceViaCloudApi } from '../utils/whatsappCloudApi.js'
+import { whatsappInvoiceMessage, whatsappAdvanceMessage, whatsappLink } from '../utils/helpers.js'
+import { isInvoiceApiConfigured, sendInvoiceViaCloudApi, isAdvanceApiConfigured, sendAdvanceViaCloudApi } from '../utils/whatsappCloudApi.js'
 
 // Drop-in replacement for the old static "Share on WhatsApp" wa.me
 // anchor used in NewBill and BillingHistory. Behaviour depends on
@@ -15,18 +15,21 @@ import { isInvoiceApiConfigured, sendInvoiceViaCloudApi } from '../utils/whatsap
 // variant="icon" renders the small icon-only control used in the
 // BillingHistory table row; variant="button" (default) renders the
 // full labelled button used in the success/view modals.
-export default function InvoiceWhatsAppButton({ bill, settings, variant = 'button', className = '' }) {
+// kind="advance" does the same for advance-booking receipts (Settings > Advance
+// booking WhatsApp sending); `bill` is then the receipt-shaped booking.
+export default function InvoiceWhatsAppButton({ bill, settings, variant = 'button', className = '', kind = 'invoice' }) {
+  const isAdvance = kind === 'advance'
   const [status, setStatus] = useState('idle') // idle | sending | sent | error
   const [error, setError] = useState('')
 
   if (!bill.client?.phone) return null
 
-  const apiMode = isInvoiceApiConfigured(settings)
+  const apiMode = isAdvance ? isAdvanceApiConfigured(settings) : isInvoiceApiConfigured(settings)
 
   async function handleApiSend() {
     setStatus('sending')
     setError('')
-    const result = await sendInvoiceViaCloudApi(settings, bill)
+    const result = await (isAdvance ? sendAdvanceViaCloudApi(settings, bill) : sendInvoiceViaCloudApi(settings, bill))
     if (result.ok) {
       setStatus('sent')
       setTimeout(() => setStatus('idle'), 3000)
@@ -38,7 +41,7 @@ export default function InvoiceWhatsAppButton({ bill, settings, variant = 'butto
 
   // Manual default - unchanged from before.
   if (!apiMode) {
-    const href = whatsappLink(bill.client.phone, whatsappInvoiceMessage(settings, bill))
+    const href = whatsappLink(bill.client.phone, isAdvance ? whatsappAdvanceMessage(settings, bill) : whatsappInvoiceMessage(settings, bill))
     if (variant === 'icon') {
       return (
         <a
@@ -80,14 +83,14 @@ export default function InvoiceWhatsAppButton({ bill, settings, variant = 'butto
           className ||
           `p-1.5 ${status === 'error' ? 'text-danger' : status === 'sent' ? 'text-success' : 'text-muted hover:text-success'}`
         }
-        title={status === 'error' ? error || 'Send failed - click to retry' : 'Send invoice via WhatsApp'}
+        title={status === 'error' ? error || 'Send failed - click to retry' : isAdvance ? 'Send advance receipt via WhatsApp' : 'Send invoice via WhatsApp'}
       >
         {icon}
       </button>
     )
   }
 
-  const label = status === 'sending' ? 'Sending…' : status === 'sent' ? 'Sent' : status === 'error' ? 'Retry send' : 'Send Invoice'
+  const label = status === 'sending' ? 'Sending…' : status === 'sent' ? 'Sent' : status === 'error' ? 'Retry send' : isAdvance ? 'Send Receipt' : 'Send Invoice'
 
   return (
     <div className="flex flex-col items-start gap-1">

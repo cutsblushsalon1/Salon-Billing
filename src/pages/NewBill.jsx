@@ -18,7 +18,6 @@ import {
   Crown,
   Sparkles,
   CalendarPlus,
-  MessageCircle,
 } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, Modal, Badge } from '../components/ui.jsx'
@@ -43,8 +42,6 @@ import {
   serviceMatchesGender,
   calcAdvanceSettlement,
   advanceBookingToReceipt,
-  whatsappAdvanceMessage,
-  whatsappLink,
   formatTimeLabel,
 } from '../utils/helpers.js'
 import { downloadBillPDF } from '../utils/pdf.js'
@@ -1134,16 +1131,7 @@ export default function NewBill() {
               <button onClick={() => downloadBillPDF(advanceBookingToReceipt(generatedReceipt), settings)} className="btn-ghost">
                 <Download size={15} /> Download PDF
               </button>
-              {generatedReceipt.client?.phone && (
-                <a
-                  href={whatsappLink(generatedReceipt.client.phone, whatsappAdvanceMessage(settings, generatedReceipt))}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="btn-ghost"
-                >
-                  <MessageCircle size={15} /> Share on WhatsApp
-                </a>
-              )}
+              <InvoiceWhatsAppButton bill={advanceBookingToReceipt(generatedReceipt)} settings={settings} kind="advance" />
               <button onClick={resetForm} className="btn-primary ml-auto">
                 Done
               </button>

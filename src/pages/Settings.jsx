@@ -29,6 +29,7 @@ import {
   sendInvoiceViaCloudApi,
   sendMembershipViaCloudApi,
   sendFollowUpViaCloudApi,
+  sendAdvanceViaCloudApi,
   sendAppointmentConfirmationViaCloudApi,
   sendAppointmentReminderViaCloudApi,
   isCrmConnectionConfigured,
@@ -83,6 +84,9 @@ export default function Settings() {
   const [testFollowUpStatus, setTestFollowUpStatus] = useState("idle"); // idle | sending | sent | error
   const [testFollowUpError, setTestFollowUpError] = useState("");
 
+  const [testAdvPhone, setTestAdvPhone] = useState("");
+  const [testAdvStatus, setTestAdvStatus] = useState("idle"); // idle | sending | sent | error
+  const [testAdvError, setTestAdvError] = useState("");
   const [testApptPhone, setTestApptPhone] = useState("");
   const [testApptStatus, setTestApptStatus] = useState("idle"); // idle | sending-confirm | sending-reminder | sent | error
   const [testApptError, setTestApptError] = useState("");
@@ -163,6 +167,34 @@ export default function Settings() {
     } else {
       setTestFollowUpStatus("error");
       setTestFollowUpError(result.error);
+    }
+  }
+
+  async function handleSendTestAdvance() {
+    setTestAdvStatus("sending");
+    setTestAdvError("");
+    const when = new Date(Date.now() + 2 * 86400000);
+    const pad = (n) => String(n).padStart(2, "0");
+    const testReceipt = {
+      receiptNo: `${"ADV"}-TEST`,
+      client: { name: "Test Client", phone: testAdvPhone },
+      scheduledDate: `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())}`,
+      scheduledTime: "16:30",
+      total: 1500,
+      advanceAmount: 500,
+    };
+    // Force-enable for the test call so you can verify the connection
+    // before flipping the toggle on for real bookings.
+    const result = await sendAdvanceViaCloudApi(
+      { ...settings, ...form, advanceApiEnabled: true },
+      testReceipt,
+    );
+    if (result.ok) {
+      setTestAdvStatus("sent");
+      setTimeout(() => setTestAdvStatus("idle"), 4000);
+    } else {
+      setTestAdvStatus("error");
+      setTestAdvError(result.error);
     }
   }
 
@@ -1029,6 +1061,151 @@ Team ${form.salonName || "Cuts & Blush Unisex Salon"}`}
           )}
           <p className="text-xs text-muted mt-2">
             Sends a real template message with dummy membership data, using the
+            values above (saved or not).
+          </p>
+        </div>
+      </section>
+
+      {/* Advance booking WhatsApp sending */}
+      <section className="card p-5 sm:p-6 mt-6">
+        <div className="flex items-center gap-2 mb-4">
+          <MessageCircle size={17} className="text-plum" />
+          <p className="font-display text-lg text-ink">
+            Advance booking WhatsApp sending
+          </p>
+        </div>
+
+        <label className="flex items-center gap-2.5 text-sm font-medium text-ink mb-3">
+          <input
+            type="checkbox"
+            checked={!!form.advanceApiEnabled}
+            onChange={(e) =>
+              setForm((s) => ({ ...s, advanceApiEnabled: e.target.checked }))
+            }
+            className="w-4 h-4 accent-plum"
+          />
+          <Zap size={15} className="text-brass-dark" /> Send advance booking
+          receipts via WhatsApp Cloud API
+        </label>
+
+        <div className="flex items-start gap-2.5 p-3 rounded-lg bg-plum/5 text-xs text-ink mb-4">
+          <TriangleAlert size={15} className="text-plum mt-0.5 shrink-0" />
+          <p>
+            Leave this off (default) and the receipt's "Share on WhatsApp"
+            button opens a pre-filled chat for you to send yourself, with a link
+            to the receipt. Turn it on once the{" "}
+            <span className="font-medium">WhatsApp CRM connection</span> above
+            is set up, and the same button sends the approved template straight
+            away.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="label">Template name</label>
+            <input
+              className="input"
+              value={form.advanceTemplateName || ""}
+              onChange={(e) =>
+                setForm((s) => ({ ...s, advanceTemplateName: e.target.value }))
+              }
+              disabled={!form.advanceApiEnabled}
+            />
+            <p className="text-xs text-muted mt-1.5">
+              Must match the approved template name exactly (case-sensitive).
+            </p>
+          </div>
+          <div>
+            <label className="label">Template language code</label>
+            <input
+              className="input"
+              placeholder="en"
+              value={form.advanceTemplateLanguage || ""}
+              onChange={(e) =>
+                setForm((s) => ({ ...s, advanceTemplateLanguage: e.target.value }))
+              }
+              disabled={!form.advanceApiEnabled}
+            />
+          </div>
+        </div>
+        <label className="flex items-center gap-2.5 text-sm text-ink mt-3">
+          <input
+            type="checkbox"
+            checked={!!form.advanceTemplateHasButton}
+            onChange={(e) =>
+              setForm((s) => ({ ...s, advanceTemplateHasButton: e.target.checked }))
+            }
+            disabled={!form.advanceApiEnabled}
+            className="w-4 h-4 accent-plum"
+          />
+          My template has a "View Receipt" URL button (same setup as the invoice
+          button, ending in /invoice/{"{{1}}"})
+        </label>
+
+        <div className="border-t border-black/5 mt-5 pt-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted mb-2">
+            Approved template reference
+          </p>
+          <div className="rounded-lg bg-sand/50 px-3 py-3 text-xs text-ink font-mono whitespace-pre-wrap leading-relaxed">
+            {`Hello {{1}}, thank you for booking with *${form.salonName || "Cuts & Blush Unisex Salon"}*.
+
+Your advance receipt *{{2}}* is created for your appointment on *{{3}}*.
+
+*Advance paid:* {{4}}
+*Balance due at the salon:* {{5}}
+
+Thanks,
+Team ${form.salonName || "Cuts & Blush Unisex Salon"}`}
+          </div>
+          <p className="text-xs text-muted mt-2">
+            {"{{1}}"} name, {"{{2}}"} receipt number, {"{{3}}"} appointment
+            date &amp; time, {"{{4}}"} advance paid, {"{{5}}"} balance due — all
+            generated from the booking, never typed in. Category: Utility.
+          </p>
+        </div>
+
+        <div className="border-t border-black/5 mt-5 pt-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted mb-2">
+            Test the connection
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              className="input sm:w-56"
+              placeholder="Your WhatsApp number"
+              value={testAdvPhone}
+              onChange={(e) => setTestAdvPhone(e.target.value)}
+            />
+            <button
+              onClick={handleSendTestAdvance}
+              className="btn-ghost"
+              disabled={
+                testAdvStatus === "sending" ||
+                !testAdvPhone.trim() ||
+                !form.whatsappCrmBaseUrl ||
+                !form.whatsappCrmApiKey ||
+                !form.advanceTemplateName
+              }
+            >
+              {testAdvStatus === "sending" ? (
+                <Loader2 size={15} className="animate-spin" />
+              ) : (
+                <Send size={15} />
+              )}
+              {testAdvStatus === "sending" ? "Sending…" : "Send test advance message"}
+            </button>
+            {testAdvStatus === "sent" && (
+              <span className="text-success text-sm font-medium flex items-center gap-1">
+                <CircleCheck size={15} /> Sent — check WhatsApp
+              </span>
+            )}
+          </div>
+          {testAdvStatus === "error" && (
+            <p className="text-xs text-danger mt-2 flex items-center gap-1">
+              <CircleX size={13} /> {testAdvError}
+            </p>
+          )}
+          <p className="text-xs text-muted mt-2">
+            Sends a real template message with dummy booking data, using the
             values above (saved or not).
           </p>
         </div>

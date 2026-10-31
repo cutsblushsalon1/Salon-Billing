@@ -7,6 +7,7 @@ import {
   getStaffSalaryStatus,
   parseAppointmentDateTime,
   ADVANCE_RECEIPT_PREFIX,
+  advanceBookingToReceipt,
 } from '../utils/helpers.js'
 import { pushInvoiceToSupabase } from '../utils/invoiceSync.js'
 import { fetchAppState, fetchAppStateKey, saveAppState } from '../lib/appStateSync.js'
@@ -19,6 +20,7 @@ import {
   markConfirmationSent,
   claimAppointmentReminder,
   releaseAppointmentReminder,
+  insertAppointmentRemote,
 } from '../utils/appointmentsSync.js'
 import {
   isAppointmentConfirmApiConfigured,
@@ -217,7 +219,8 @@ export function AppProvider({ children }) {
     // itself. Safe to call repeatedly - it no-ops once already granted/denied.
     requestNotificationPermission()
     const unsubscribe = subscribeToAppointments((payload) => {
-      if (payload?.eventType === 'INSERT' && payload.new) {
+      // Appointments booked here at the front desk don't need a "new request" chime.
+      if (payload?.eventType === 'INSERT' && payload.new && payload.new.source !== 'manual') {
         notifyNewAppointment(payload.new)
       }
       fetchAppointments().then((rows) => {
@@ -1062,6 +1065,16 @@ export function AppProvider({ children }) {
     updateAppointmentStatus(id, status)
   }, [])
 
+  // Books an appointment from the front desk (phone call / walk-in). Saved to
+  // the same table as website bookings, tagged source = 'manual'.
+  const createManualAppointment = useCallback(async (draft) => {
+    const result = await insertAppointmentRemote({ ...draft, source: 'manual' })
+    if (result.ok) {
+      setAppointments((prev) => (prev.some((a) => a.id === result.row.id) ? prev : [result.row, ...prev]))
+    }
+    return result
+  }, [])
+
   const removeAppointment = useCallback((id) => {
     setAppointments((prev) => prev.filter((a) => a.id !== id))
     deleteAppointmentRemote(id)
@@ -1108,9 +1121,12 @@ export function AppProvider({ children }) {
       }
       setSettings((prev) => ({ ...prev, advanceCounter: (Number(prev.advanceCounter) || 1) + 1 }))
       mutateAdvanceBookings((list) => (list.some((b) => b.id === booking.id) ? list : [booking, ...list]))
+      // Publish the receipt to the same public-invoice table bills use, so the
+      // WhatsApp message can link to /invoice/ADV-0001 (best-effort).
+      pushInvoiceToSupabase(advanceBookingToReceipt(booking), settings)
       return booking
     },
-    [settings.advanceCounter, mutateAdvanceBookings],
+    [settings, mutateAdvanceBookings],
   )
 
   const updateAdvanceBooking = useCallback(
@@ -1357,6 +1373,7 @@ export function AppProvider({ children }) {
     appointments,
     markAppointmentStatus,
     confirmAppointment,
+    createManualAppointment,
     removeAppointment,
     advanceBookings,
     createAdvanceBooking,
