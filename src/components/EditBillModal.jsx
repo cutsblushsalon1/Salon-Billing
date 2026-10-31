@@ -1,8 +1,20 @@
 import React, { useMemo, useState } from 'react'
-import { Search, Plus, Minus, Trash2, Scissors, Package, Save, TriangleAlert } from 'lucide-react'
+import { Search, Plus, Minus, Trash2, Scissors, Package, Save, TriangleAlert, X } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { Modal } from './ui.jsx'
-import { calcBillTotals, calcLineTotal, isNoDiscountCategory, formatCurrency, matchesCatalogQuery, getComboServiceNames , capitalizeWordsPreserveSpaces } from '../utils/helpers.js'
+import {
+  calcBillTotals,
+  calcLineTotal,
+  isNoDiscountCategory,
+  formatCurrency,
+  matchesCatalogQuery,
+  getComboServiceNames,
+  capitalizeWordsPreserveSpaces,
+  getItemStaff,
+  genderToServiceFilter,
+  serviceMatchesGender,
+  calcAdvanceSettlement,
+} from '../utils/helpers.js'
 
 const PAYMENT_METHODS = ['Cash', 'Card', 'UPI', 'Wallet']
 
@@ -12,11 +24,25 @@ function toDateInputValue(iso) {
 }
 
 export default function EditBillModal({ bill, open, onClose }) {
-  const { services, products, staff, settings, updateBill, upsertClient } = useApp()
+  const { services, products, staff, settings, updateBill, upsertClient, clients } = useApp()
 
   const [items, setItems] = useState(() =>
-    bill.items.map((it) => ({ ...it, discountPercent: it.discountPercent || 0, staffId: it.staffId || '', staffName: it.staffName || '' })),
+    bill.items.map((it) => {
+      const list = getItemStaff(it)
+      return {
+        ...it,
+        discountPercent: it.discountPercent || 0,
+        staffId: list[0]?.id || '',
+        staffName: list.map((x) => x.name).join(' & '),
+        staffIds: list.map((x) => x.id),
+        staffNames: list.map((x) => x.name),
+      }
+    }),
   )
+  // Show only the services that suit the billed client's gender (unisex
+  // always shown); staff can switch it with the chips.
+  const billClientGender = bill.client?.id ? clients.find((c) => c.id === bill.client.id)?.gender : null
+  const [serviceGender, setServiceGender] = useState(() => genderToServiceFilter(billClientGender))
   const [discountType, setDiscountType] = useState(bill.discountType || 'none')
   const [discountValue, setDiscountValue] = useState(bill.discountValue || '')
   const [taxPercent, setTaxPercent] = useState(bill.taxPercent || 0)
@@ -29,8 +55,10 @@ export default function EditBillModal({ bill, open, onClose }) {
 
   const catalogList = catalogTab === 'service' ? services : products
   const filteredCatalog = useMemo(() => {
-    return catalogList.filter((item) => matchesCatalogQuery(item, catalogQuery)).slice(0, 20)
-  }, [catalogList, catalogQuery])
+    return catalogList
+      .filter((item) => matchesCatalogQuery(item, catalogQuery) && (catalogTab !== 'service' || serviceMatchesGender(item, serviceGender)))
+      .slice(0, 20)
+  }, [catalogList, catalogQuery, catalogTab, serviceGender])
 
   function addItem(item, type) {
     setItems((prev) => {
@@ -48,6 +76,8 @@ export default function EditBillModal({ bill, open, onClose }) {
           discountPercent: 0,
           staffId: '',
           staffName: '',
+          staffIds: [],
+          staffNames: [],
           isCombo: !!item.isCombo,
           comboItems: item.isCombo ? getComboServiceNames(item, services) : [],
         },
@@ -70,10 +100,31 @@ export default function EditBillModal({ bill, open, onClose }) {
     )
   }
 
-  function updateStaff(refId, type, staffId) {
-    const member = staff.find((s) => s.id === staffId)
+  // Several staff can share one line; staffId/staffName keep the first id and
+  // the joined names for anything still reading the single-staff fields.
+  function setLineStaff(c, ids) {
+    const members = ids.map((id) => staff.find((s) => s.id === id)).filter(Boolean)
+    return {
+      ...c,
+      staffIds: members.map((m) => m.id),
+      staffNames: members.map((m) => m.name),
+      staffId: members[0]?.id || '',
+      staffName: members.map((m) => m.name).join(' & '),
+    }
+  }
+
+  function addStaffTo(refId, type, staffId) {
+    if (!staffId) return
     setItems((prev) =>
-      prev.map((c) => (c.refId === refId && c.type === type ? { ...c, staffId, staffName: member?.name || '' } : c)),
+      prev.map((c) =>
+        c.refId === refId && c.type === type && !(c.staffIds || []).includes(staffId) ? setLineStaff(c, [...(c.staffIds || []), staffId]) : c,
+      ),
+    )
+  }
+
+  function removeStaffFrom(refId, type, staffId) {
+    setItems((prev) =>
+      prev.map((c) => (c.refId === refId && c.type === type ? setLineStaff(c, (c.staffIds || []).filter((id) => id !== staffId)) : c)),
     )
   }
 
@@ -86,7 +137,7 @@ export default function EditBillModal({ bill, open, onClose }) {
     [items, discountType, discountValue, taxPercent],
   )
 
-  const canSave = items.length > 0 && items.every((it) => !!it.staffId) && clientName.trim().length > 0
+  const canSave = items.length > 0 && items.every((it) => getItemStaff(it).some((st) => st.id)) && clientName.trim().length > 0
 
   function handleSave() {
     if (!canSave) return
@@ -111,6 +162,9 @@ export default function EditBillModal({ bill, open, onClose }) {
       date: original.toISOString(),
       client: updatedClient,
       ...totals,
+      // If this bill settled an advance, re-work the balance against the new total.
+      ...(Number(bill.advancePaid) > 0 ? calcAdvanceSettlement(totals.total, bill.advancePaid) : {}),
+      staffList: Array.from(new Map(items.flatMap((i) => getItemStaff(i)).filter((x) => x.id).map((x) => [x.id, x])).values()),
     })
 
     // If this bill belongs to a saved client (not a one-off walk-in), keep
@@ -206,20 +260,36 @@ export default function EditBillModal({ bill, open, onClose }) {
                     </div>
 
                     <div className="grid grid-cols-2 gap-2 mt-2">
-                      <select
-                        value={it.staffId}
-                        onChange={(e) => updateStaff(it.refId, it.type, e.target.value)}
-                        className={`rounded-md border px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brass/60 focus:border-brass ${
-                          it.staffId ? 'border-black/10' : 'border-danger/40 text-danger'
-                        }`}
-                      >
-                        <option value="">Assign staff…</option>
-                        {staff.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.name} {s.active ? '' : '(inactive)'}
-                          </option>
-                        ))}
-                      </select>
+                      <div>
+                        {getItemStaff(it).length > 0 && (
+                          <div className="flex flex-wrap gap-1 mb-1">
+                            {getItemStaff(it).map((st) => (
+                              <span key={st.id} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full bg-plum/10 text-plum text-[11px] font-medium">
+                                {st.name}
+                                <button onClick={() => removeStaffFrom(it.refId, it.type, st.id)} className="w-4 h-4 rounded-full hover:bg-plum/20 flex items-center justify-center">
+                                  <X size={10} />
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        <select
+                          value=""
+                          onChange={(e) => addStaffTo(it.refId, it.type, e.target.value)}
+                          className={`w-full rounded-md border px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brass/60 focus:border-brass ${
+                            getItemStaff(it).length > 0 ? 'border-black/10' : 'border-danger/40 text-danger'
+                          }`}
+                        >
+                          <option value="">{getItemStaff(it).length > 0 ? 'Add another staff…' : 'Assign staff…'}</option>
+                          {staff
+                            .filter((st) => !(it.staffIds || []).includes(st.id))
+                            .map((st) => (
+                              <option key={st.id} value={st.id}>
+                                {st.name} {st.active ? '' : '(inactive)'}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
                       <div className="flex items-center gap-1.5">
                         <label className="text-[11px] text-muted whitespace-nowrap">Discount</label>
                         {isNoDiscountCategory(it.category) ? (
@@ -273,6 +343,21 @@ export default function EditBillModal({ bill, open, onClose }) {
                 <Package size={12} /> Products
               </button>
             </div>
+            {catalogTab === 'service' && (
+              <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+                {['All', 'Male', 'Female'].map((g) => (
+                  <button
+                    key={g}
+                    onClick={() => setServiceGender(g)}
+                    className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${
+                      serviceGender === g ? 'bg-brass/20 border-brass text-ink' : 'border-black/10 text-muted hover:bg-black/5'
+                    }`}
+                  >
+                    {g === 'All' ? 'All' : g === 'Male' ? 'Men' : 'Women'}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="relative mb-2">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
               <input
@@ -351,6 +436,13 @@ export default function EditBillModal({ bill, open, onClose }) {
               <span className="tabular">{formatCurrency(totals.total, settings.currencySymbol)}</span>
             </div>
           </div>
+
+          {Number(bill.advancePaid) > 0 && (
+            <p className="text-xs text-muted">
+              Advance paid ({bill.advanceReceiptNo}): {formatCurrency(bill.advancePaid, settings.currencySymbol)} — balance{' '}
+              {formatCurrency(calcAdvanceSettlement(totals.total, bill.advancePaid).balanceDue, settings.currencySymbol)}.
+            </p>
+          )}
 
           {bill.client?.id && totals.total !== bill.total && (
             <p className="text-xs text-muted flex items-start gap-1.5">

@@ -29,6 +29,8 @@ import {
   sendInvoiceViaCloudApi,
   sendMembershipViaCloudApi,
   sendFollowUpViaCloudApi,
+  sendAppointmentConfirmationViaCloudApi,
+  sendAppointmentReminderViaCloudApi,
   isCrmConnectionConfigured,
 } from "../utils/whatsappCloudApi.js";
 
@@ -80,6 +82,10 @@ export default function Settings() {
   const [testFollowUpPhone, setTestFollowUpPhone] = useState("");
   const [testFollowUpStatus, setTestFollowUpStatus] = useState("idle"); // idle | sending | sent | error
   const [testFollowUpError, setTestFollowUpError] = useState("");
+
+  const [testApptPhone, setTestApptPhone] = useState("");
+  const [testApptStatus, setTestApptStatus] = useState("idle"); // idle | sending-confirm | sending-reminder | sent | error
+  const [testApptError, setTestApptError] = useState("");
 
   const NTFY_TOPIC = "CutsBlushSalonAppointmentsNotification";
 
@@ -157,6 +163,40 @@ export default function Settings() {
     } else {
       setTestFollowUpStatus("error");
       setTestFollowUpError(result.error);
+    }
+  }
+
+  async function handleSendTestAppointment(kind) {
+    setTestApptStatus(kind === "confirm" ? "sending-confirm" : "sending-reminder");
+    setTestApptError("");
+    const soon = new Date(Date.now() + 60 * 60000);
+    const pad = (n) => String(n).padStart(2, "0");
+    const testAppt = {
+      client_name: "Test Client",
+      phone: testApptPhone,
+      service_name: "Hair Cut",
+      appointment_date: `${soon.getFullYear()}-${pad(soon.getMonth() + 1)}-${pad(soon.getDate())}`,
+      appointment_time: soon.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
+    };
+    // Force-enable for the test call so the connection can be verified
+    // before switching the toggle on.
+    const cfg = {
+      ...settings,
+      ...form,
+      appointmentApiEnabled: true,
+      appointmentReminderEnabled: true,
+      appointmentReminderMinutes: Number(form.appointmentReminderMinutes) || 15,
+    };
+    const result =
+      kind === "confirm"
+        ? await sendAppointmentConfirmationViaCloudApi(cfg, testAppt)
+        : await sendAppointmentReminderViaCloudApi(cfg, testAppt);
+    if (result.ok) {
+      setTestApptStatus("sent");
+      setTimeout(() => setTestApptStatus("idle"), 4000);
+    } else {
+      setTestApptStatus("error");
+      setTestApptError(result.error);
     }
   }
 
@@ -989,6 +1029,201 @@ Team ${form.salonName || "Cuts & Blush Unisex Salon"}`}
           )}
           <p className="text-xs text-muted mt-2">
             Sends a real template message with dummy membership data, using the
+            values above (saved or not).
+          </p>
+        </div>
+      </section>
+
+      {/* Appointment WhatsApp messages */}
+      <section className="card p-5 sm:p-6 mt-6">
+        <div className="flex items-center gap-2 mb-4">
+          <MessageCircle size={17} className="text-plum" />
+          <p className="font-display text-lg text-ink">
+            Appointment WhatsApp messages
+          </p>
+        </div>
+
+        <div className="flex items-start gap-2.5 p-3 rounded-lg bg-plum/5 text-xs text-ink mb-4">
+          <TriangleAlert size={15} className="text-plum mt-0.5 shrink-0" />
+          <p>
+            Uses the same <span className="font-medium">WhatsApp CRM connection</span>{" "}
+            as the other messages. Each message needs its own approved Meta
+            template (references below). Both are off by default.
+          </p>
+        </div>
+
+        {/* Confirmation */}
+        <label className="flex items-center gap-2.5 text-sm font-medium text-ink mb-3">
+          <input
+            type="checkbox"
+            checked={!!form.appointmentApiEnabled}
+            onChange={(e) =>
+              setForm((s) => ({ ...s, appointmentApiEnabled: e.target.checked }))
+            }
+            className="w-4 h-4 accent-plum"
+          />
+          <Zap size={15} className="text-brass-dark" /> Send a confirmation
+          message when I click "Confirm" on an appointment
+        </label>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+          <div>
+            <label className="label">Confirmation template name</label>
+            <input
+              className="input"
+              value={form.appointmentTemplateName || ""}
+              onChange={(e) =>
+                setForm((s) => ({ ...s, appointmentTemplateName: e.target.value }))
+              }
+              disabled={!form.appointmentApiEnabled}
+            />
+            <p className="text-xs text-muted mt-1.5">
+              Must match the approved template name exactly (case-sensitive).
+            </p>
+          </div>
+          <div>
+            <label className="label">Template language code</label>
+            <input
+              className="input"
+              placeholder="en"
+              value={form.appointmentTemplateLanguage || ""}
+              onChange={(e) =>
+                setForm((s) => ({ ...s, appointmentTemplateLanguage: e.target.value }))
+              }
+              disabled={!form.appointmentApiEnabled}
+            />
+          </div>
+        </div>
+
+        {/* Reminder */}
+        <div className="border-t border-black/5 pt-5">
+          <label className="flex items-center gap-2.5 text-sm font-medium text-ink mb-3">
+            <input
+              type="checkbox"
+              checked={!!form.appointmentReminderEnabled}
+              onChange={(e) =>
+                setForm((s) => ({ ...s, appointmentReminderEnabled: e.target.checked }))
+              }
+              className="w-4 h-4 accent-plum"
+            />
+            <Bell size={15} className="text-brass-dark" /> Automatically send a
+            follow-up reminder before the appointment
+          </label>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="label">Send this many minutes before</label>
+              <input
+                className="input"
+                type="number"
+                min="1"
+                placeholder="15"
+                value={form.appointmentReminderMinutes ?? ""}
+                onChange={(e) =>
+                  setForm((s) => ({ ...s, appointmentReminderMinutes: e.target.value }))
+                }
+                disabled={!form.appointmentReminderEnabled}
+              />
+            </div>
+            <div>
+              <label className="label">Reminder template name</label>
+              <input
+                className="input"
+                value={form.appointmentReminderTemplateName || ""}
+                onChange={(e) =>
+                  setForm((s) => ({ ...s, appointmentReminderTemplateName: e.target.value }))
+                }
+                disabled={!form.appointmentReminderEnabled}
+              />
+            </div>
+            <div>
+              <label className="label">Template language code</label>
+              <input
+                className="input"
+                placeholder="en"
+                value={form.appointmentReminderTemplateLanguage || ""}
+                onChange={(e) =>
+                  setForm((s) => ({ ...s, appointmentReminderTemplateLanguage: e.target.value }))
+                }
+                disabled={!form.appointmentReminderEnabled}
+              />
+            </div>
+          </div>
+          <p className="text-xs text-muted mt-2">
+            Example: set <span className="font-medium">15</span> and every
+            confirmed appointment gets a reminder 15 minutes before its time.
+            Only confirmed appointments are reminded, each one once.{" "}
+            <span className="font-medium">
+              Reminders are sent by this app, so a signed-in browser tab must be
+              open at the salon at that moment.
+            </span>
+          </p>
+        </div>
+
+        <div className="border-t border-black/5 mt-5 pt-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted mb-2">
+            Approved template reference (both use the same 4 values)
+          </p>
+          <div className="rounded-lg bg-sand/50 px-3 py-3 text-xs text-ink font-mono whitespace-pre-wrap leading-relaxed">
+            {`Confirmation:
+Hello {{1}}, your appointment at *${form.salonName || "Cuts & Blush Unisex Salon"}* for *{{2}}* is confirmed on *{{3}}* at *{{4}}*. See you soon!
+
+Reminder:
+Hello {{1}}, a reminder from *${form.salonName || "Cuts & Blush Unisex Salon"}* — your appointment for *{{2}}* is on *{{3}}* at *{{4}}*. See you soon!`}
+          </div>
+          <p className="text-xs text-muted mt-2">
+            {"{{1}}"} client name, {"{{2}}"} service, {"{{3}}"} date,{" "}
+            {"{{4}}"} time — generated from the appointment, never typed in.
+            Your template wording can differ as long as it has these four
+            variables in this order.
+          </p>
+        </div>
+
+        <div className="border-t border-black/5 mt-5 pt-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted mb-2">
+            Test the connection
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              className="input sm:w-56"
+              placeholder="Your WhatsApp number"
+              value={testApptPhone}
+              onChange={(e) => setTestApptPhone(e.target.value)}
+            />
+            {[
+              ["confirm", "Send test confirmation", form.appointmentTemplateName],
+              ["reminder", "Send test reminder", form.appointmentReminderTemplateName],
+            ].map(([kind, label, tpl]) => {
+              const busy = testApptStatus === `sending-${kind}`;
+              return (
+                <button
+                  key={kind}
+                  onClick={() => handleSendTestAppointment(kind)}
+                  className="btn-ghost"
+                  disabled={
+                    testApptStatus.startsWith("sending") ||
+                    !testApptPhone.trim() ||
+                    !form.whatsappCrmBaseUrl ||
+                    !form.whatsappCrmApiKey ||
+                    !tpl
+                  }
+                >
+                  {busy ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+                  {busy ? "Sending…" : label}
+                </button>
+              );
+            })}
+            {testApptStatus === "sent" && (
+              <span className="text-success text-sm font-medium flex items-center gap-1">
+                <CircleCheck size={15} /> Sent — check WhatsApp
+              </span>
+            )}
+          </div>
+          {testApptStatus === "error" && (
+            <p className="text-xs text-danger mt-2 flex items-center gap-1">
+              <CircleX size={13} /> {testApptError}
+            </p>
+          )}
+          <p className="text-xs text-muted mt-2">
+            Sends a real template message with dummy appointment data, using the
             values above (saved or not).
           </p>
         </div>

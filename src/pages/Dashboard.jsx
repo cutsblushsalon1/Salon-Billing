@@ -15,7 +15,7 @@ import {
 } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { StatCard, PageHeader, EmptyState, Badge } from '../components/ui.jsx'
-import { formatCurrency, formatDateTime, isSameDay, isSameMonth, daysSince } from '../utils/helpers.js'
+import { formatCurrency, formatDateTime, isSameDay, isSameMonth, daysSince, getBillPaymentSplit } from '../utils/helpers.js'
 
 export default function Dashboard() {
   const { bills, clients, settings, products, followUps, clientMemberships } = useApp()
@@ -47,8 +47,10 @@ export default function Dashboard() {
   const splitCashBank = (billList) =>
     billList.reduce(
       (acc, b) => {
-        if (b.paymentMethod === 'Cash') acc.cash += b.total
-        else acc.bank += b.total
+        getBillPaymentSplit(b).forEach(({ method, amount }) => {
+          if (method === 'Cash') acc.cash += amount
+          else acc.bank += amount
+        })
         return acc
       },
       { cash: 0, bank: 0 },

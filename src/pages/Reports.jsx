@@ -23,6 +23,8 @@ import {
   isSameMonth,
   calcBillItemRevenue,
   getBillStaffNames,
+  getItemStaff,
+  getBillPaymentSplit,
   computeClientInsights,
   getClientSegment,
 } from '../utils/helpers.js'
@@ -179,17 +181,21 @@ export default function Reports() {
   const staffStats = useMemo(() => {
     const map = {}
     scopedBills.forEach((b) => {
-      const hasStaffedItems = b.items?.some((it) => it.staffName)
+      const hasStaffedItems = b.items?.some((it) => getItemStaff(it).some((s) => s.name))
       if (hasStaffedItems) {
         // Effective revenue already has item-level AND whole-bill discounts
         // proportionally removed, so multi-staff bills split fairly.
         const effectiveRevenues = calcBillItemRevenue(b)
         b.items.forEach((it, idx) => {
-          if (!it.staffName) return
-          const revenue = effectiveRevenues[idx]
-          if (!map[it.staffName]) map[it.staffName] = { name: it.staffName, count: 0, revenue: 0 }
-          map[it.staffName].count += 1
-          map[it.staffName].revenue += revenue
+          // Several staff on one line share its revenue equally.
+          const assigned = getItemStaff(it).filter((s) => s.name)
+          if (assigned.length === 0) return
+          const share = effectiveRevenues[idx] / assigned.length
+          assigned.forEach((s) => {
+            if (!map[s.name]) map[s.name] = { name: s.name, count: 0, revenue: 0 }
+            map[s.name].count += 1
+            map[s.name].revenue += share
+          })
         })
       } else {
         // Legacy bills created before per-item staff assignment existed
@@ -206,7 +212,9 @@ export default function Reports() {
   const paymentStats = useMemo(() => {
     const map = {}
     scopedBills.forEach((b) => {
-      map[b.paymentMethod] = (map[b.paymentMethod] || 0) + b.total
+      getBillPaymentSplit(b).forEach(({ method, amount }) => {
+        map[method] = (map[method] || 0) + amount
+      })
     })
     return Object.entries(map).map(([name, value]) => ({ name, value }))
   }, [scopedBills])
@@ -218,8 +226,10 @@ export default function Reports() {
     () =>
       scopedBills.reduce(
         (acc, b) => {
-          if (b.paymentMethod === 'Cash') acc.cash += b.total
-          else acc.bank += b.total
+          getBillPaymentSplit(b).forEach(({ method, amount }) => {
+            if (method === 'Cash') acc.cash += amount
+            else acc.bank += amount
+          })
           return acc
         },
         { cash: 0, bank: 0 },

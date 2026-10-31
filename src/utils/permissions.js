@@ -47,6 +47,7 @@ const PAGE_ACCESS = {
   dashboard: [ROLES.MANAGER, ROLES.STAFF],
   'new-bill': [ROLES.MANAGER, ROLES.STAFF],
   appointments: [ROLES.MANAGER, ROLES.STAFF],
+  'advance-bookings': [ROLES.MANAGER, ROLES.STAFF],
   history: [ROLES.MANAGER, ROLES.STAFF],
   clients: [ROLES.MANAGER, ROLES.STAFF],
   memberships: [ROLES.MANAGER, ROLES.STAFF],

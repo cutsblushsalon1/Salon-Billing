@@ -1,10 +1,21 @@
 import React from 'react'
 import { createPortal } from 'react-dom'
 import { Scissors } from 'lucide-react'
-import { formatCurrency, formatDate, calcLineTotal, getBillStaffNames, formatPhoneDisplay } from '../utils/helpers.js'
+import {
+  formatCurrency,
+  formatDate,
+  calcLineTotal,
+  getBillStaffNames,
+  getItemStaff,
+  formatPhoneDisplay,
+  formatTimeLabel,
+} from '../utils/helpers.js'
 
 export function InvoiceLayout({ bill, settings }) {
   const staffNames = getBillStaffNames(bill)
+  const isReceipt = !!bill.isAdvanceReceipt
+  const advancePaid = Number(isReceipt ? bill.advanceAmount : bill.advancePaid) || 0
+  const cs = settings.currencySymbol
   return (
     <div className="bg-white text-ink font-body invoice-sheet">
       <div className="flex items-start justify-between gap-2 mb-6 pb-5 border-b border-ink/10">
@@ -19,7 +30,7 @@ export function InvoiceLayout({ bill, settings }) {
           </div>
         </div>
         <div className="text-right shrink-0">
-          <p className="text-[10px] uppercase tracking-wide text-muted mb-0.5">Invoice</p>
+          <p className="text-[10px] uppercase tracking-wide text-muted mb-0.5">{isReceipt ? 'Advance Receipt' : 'Invoice'}</p>
           <p className="font-display text-lg text-plum leading-tight">{bill.billNo}</p>
           <p className="text-xs text-muted mt-1">{formatDate(bill.date)}</p>
         </div>
@@ -34,10 +45,28 @@ export function InvoiceLayout({ bill, settings }) {
         <div className="text-right">
           <p className="text-muted mb-1 uppercase tracking-wide text-[10px]">Details</p>
           <p className="text-ink">{settings.phone}</p>
-          <p className="text-muted mt-0.5">Paid via {bill.paymentMethod}</p>
+          {isReceipt ? (
+            <p className="text-muted mt-0.5">Advance paid via {bill.advanceMethod}</p>
+          ) : (
+            <p className="text-muted mt-0.5">
+              {advancePaid > 0 && bill.advanceMethod
+                ? `Advance via ${bill.advanceMethod}${(Number(bill.balanceDue) || 0) > 0 ? ` · balance via ${bill.paymentMethod}` : ''}`
+                : `Paid via ${bill.paymentMethod}`}
+            </p>
+          )}
           {staffNames.length > 0 && <p className="text-muted mt-0.5">Served by {staffNames.join(', ')}</p>}
         </div>
       </div>
+
+      {isReceipt && (
+        <div className="mb-6 rounded-lg bg-brass/10 px-3.5 py-2.5 text-xs text-ink">
+          <span className="text-muted uppercase tracking-wide text-[10px]">Appointment</span>
+          <p className="font-semibold text-sm mt-0.5">
+            {formatDate(bill.scheduledDate)}
+            {bill.scheduledTime ? ` at ${formatTimeLabel(bill.scheduledTime)}` : ''}
+          </p>
+        </div>
+      )}
 
       <table className="w-full text-sm mb-6 border-collapse">
         <thead>
@@ -57,7 +86,11 @@ export function InvoiceLayout({ bill, settings }) {
                   <span>{it.name}</span>
                   {it.type === 'product' && <span className="text-muted text-[10px] ml-1.5">(product)</span>}
                   {it.isCombo && <span className="text-brass-dark text-[10px] ml-1.5">(combo)</span>}
-                  {it.staffName && <span className="block text-[10px] text-muted mt-0.5">by {it.staffName}</span>}
+                  {getItemStaff(it).length > 0 && (
+                    <span className="block text-[10px] text-muted mt-0.5">
+                      by {getItemStaff(it).map((x) => x.name).filter(Boolean).join(' & ')}
+                    </span>
+                  )}
                   {it.isCombo && it.comboItems?.length > 0 && (
                     <span className="block text-[10px] text-muted mt-0.5">Includes: {it.comboItems.join(', ')}</span>
                   )}
@@ -106,12 +139,47 @@ export function InvoiceLayout({ bill, settings }) {
             </div>
           )}
           <div className="flex justify-between pt-2 border-t border-ink/10 font-display text-lg text-plum">
-            <span>Total</span>
-            <span className="tabular">{formatCurrency(bill.total, settings.currencySymbol)}</span>
+            <span>{isReceipt ? 'Estimated total' : 'Total'}</span>
+            <span className="tabular">{formatCurrency(bill.total, cs)}</span>
           </div>
+          {isReceipt && (
+            <>
+              <div className="flex justify-between text-success font-medium">
+                <span>Advance paid</span>
+                <span className="tabular">-{formatCurrency(advancePaid, cs)}</span>
+              </div>
+              <div className="flex justify-between font-display text-base text-ink pt-1.5 border-t border-ink/10">
+                <span>Balance due</span>
+                <span className="tabular">{formatCurrency(Math.max(0, (Number(bill.total) || 0) - advancePaid), cs)}</span>
+              </div>
+            </>
+          )}
+          {!isReceipt && advancePaid > 0 && (
+            <>
+              <div className="flex justify-between text-success font-medium">
+                <span>Advance paid{bill.advanceReceiptNo ? ` (${bill.advanceReceiptNo})` : ''}</span>
+                <span className="tabular">-{formatCurrency(Number(bill.advanceApplied) || 0, cs)}</span>
+              </div>
+              <div className="flex justify-between font-display text-base text-ink pt-1.5 border-t border-ink/10">
+                <span>Balance paid</span>
+                <span className="tabular">{formatCurrency(Number(bill.balanceDue) || 0, cs)}</span>
+              </div>
+              {(Number(bill.refundDue) || 0) > 0 && (
+                <div className="flex justify-between text-danger font-medium">
+                  <span>Refund due to client</span>
+                  <span className="tabular">{formatCurrency(bill.refundDue, cs)}</span>
+                </div>
+              )}
+            </>
+          )}
         </div>
       </div>
 
+      {isReceipt && (
+        <p className="text-[11px] text-muted text-center mb-3">
+          This is an advance receipt, not a final invoice. The final bill is issued after your visit.
+        </p>
+      )}
       {settings.invoiceFooter && (
         <p className="text-[11px] text-muted text-center border-t border-ink/5 pt-4">{settings.invoiceFooter}</p>
       )}

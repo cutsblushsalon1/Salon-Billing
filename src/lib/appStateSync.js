@@ -28,6 +28,8 @@ export const SYNC_KEYS = [
   'membershipPlans',
   'clientMemberships',
   'userRoles',
+  // Advance bookings (advance receipts awaiting the final bill).
+  'advanceBookings',
 ]
 
 // Fetches every synced collection in one query. Returns {} if Supabase isn't

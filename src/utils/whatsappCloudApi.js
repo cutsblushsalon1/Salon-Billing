@@ -22,7 +22,7 @@
 //     an accurate on-screen preview - optional, sending still works
 //     with just the template name typed in by hand.
 
-import { formatPhoneE164, buildInvoiceTemplateParams, buildMembershipTemplateParams, buildFollowUpApiTemplateParams } from './helpers.js'
+import { formatPhoneE164, buildInvoiceTemplateParams, buildMembershipTemplateParams, buildFollowUpApiTemplateParams, buildAppointmentTemplateParams } from './helpers.js'
 
 export function isCrmConnectionConfigured(settings) {
   return !!(settings.whatsappCrmBaseUrl && settings.whatsappCrmApiKey)
@@ -41,6 +41,19 @@ export function isFollowUpApiConfigured(settings) {
     settings.followUpSendMode === 'api' &&
     isCrmConnectionConfigured(settings) &&
     settings.followUpTemplateName
+  )
+}
+
+export function isAppointmentConfirmApiConfigured(settings) {
+  return !!(settings.appointmentApiEnabled && isCrmConnectionConfigured(settings) && settings.appointmentTemplateName)
+}
+
+export function isAppointmentReminderApiConfigured(settings) {
+  return !!(
+    settings.appointmentReminderEnabled &&
+    isCrmConnectionConfigured(settings) &&
+    settings.appointmentReminderTemplateName &&
+    Number(settings.appointmentReminderMinutes) > 0
   )
 }
 
@@ -153,6 +166,41 @@ export async function sendFollowUpViaCloudApi(settings, client) {
     contactName: client.name,
     templateName: settings.followUpTemplateName,
     templateLanguage: settings.followUpTemplateLanguage,
+    body,
+    buttonParams: {},
+  })
+}
+
+// Appointment confirmation: sent when the front desk clicks "Confirm" on an
+// appointment. Params come straight from the appointment row (see
+// buildAppointmentTemplateParams in utils/helpers.js).
+export async function sendAppointmentConfirmationViaCloudApi(settings, appointment) {
+  if (!isAppointmentConfirmApiConfigured(settings)) {
+    return { ok: false, error: 'Appointment confirmation sending is not fully configured in Settings.' }
+  }
+  const { body } = buildAppointmentTemplateParams(appointment)
+  return sendTemplateViaCloudApi(settings, {
+    to: formatPhoneE164(appointment.phone),
+    contactName: appointment.client_name,
+    templateName: settings.appointmentTemplateName,
+    templateLanguage: settings.appointmentTemplateLanguage,
+    body,
+    buttonParams: {},
+  })
+}
+
+// Automatic reminder sent N minutes before the appointment (N is set in
+// Settings). Same four values as the confirmation, its own template.
+export async function sendAppointmentReminderViaCloudApi(settings, appointment) {
+  if (!isAppointmentReminderApiConfigured(settings)) {
+    return { ok: false, error: 'Appointment reminder sending is not fully configured in Settings.' }
+  }
+  const { body } = buildAppointmentTemplateParams(appointment)
+  return sendTemplateViaCloudApi(settings, {
+    to: formatPhoneE164(appointment.phone),
+    contactName: appointment.client_name,
+    templateName: settings.appointmentReminderTemplateName,
+    templateLanguage: settings.appointmentReminderTemplateLanguage,
     body,
     buttonParams: {},
   })

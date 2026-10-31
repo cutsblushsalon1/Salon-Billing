@@ -17,6 +17,7 @@ import Services from './pages/Services.jsx'
 import Products from './pages/Products.jsx'
 import Memberships from './pages/Memberships.jsx'
 import Appointments from './pages/Appointments.jsx'
+import AdvanceBookings from './pages/AdvanceBookings.jsx'
 import Settings from './pages/Settings.jsx'
 import { hasPageAccess } from './utils/permissions.js'
 import { ShieldAlert } from 'lucide-react'
@@ -69,6 +70,7 @@ export default function App() {
                 <Route path="/" element={<RoleRoute page="dashboard"><Dashboard /></RoleRoute>} />
                 <Route path="/new-bill" element={<RoleRoute page="new-bill"><NewBill /></RoleRoute>} />
                 <Route path="/appointments" element={<RoleRoute page="appointments"><Appointments /></RoleRoute>} />
+                <Route path="/advance-bookings" element={<RoleRoute page="advance-bookings"><AdvanceBookings /></RoleRoute>} />
                 <Route path="/history" element={<RoleRoute page="history"><BillingHistory /></RoleRoute>} />
                 <Route path="/clients" element={<RoleRoute page="clients"><Clients /></RoleRoute>} />
                 <Route path="/clients/:id" element={<RoleRoute page="clients"><ClientProfile /></RoleRoute>} />

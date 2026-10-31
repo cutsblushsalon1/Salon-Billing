@@ -31,6 +31,7 @@ import {
   capitalizeWordsPreserveSpaces,
   formatPhoneDisplay,
   getStaffSalaryStatus,
+  getItemStaff,
 } from '../utils/helpers.js'
 import { downloadAttendanceExcel } from '../utils/excel.js'
 
@@ -97,7 +98,7 @@ export default function Staff() {
 
     bills.forEach((b) => {
       const inMonth = isSameMonth(b.date, today)
-      const hasStaffedItems = b.items?.some((it) => it.staffId)
+      const hasStaffedItems = b.items?.some((it) => getItemStaff(it).some((s) => s.id))
 
       if (hasStaffedItems) {
         // Each item's revenue already has its own item-level discount removed,
@@ -107,15 +108,21 @@ export default function Staff() {
         // to what they actually did, not dumped on a single person.
         const effectiveRevenues = calcBillItemRevenue(b)
         b.items.forEach((it, idx) => {
-          if (!it.staffId) return
-          const revenue = effectiveRevenues[idx]
-          const entry = ensure(it.staffId)
-          entry.count += 1
-          entry.revenue += revenue
-          if (inMonth) {
-            if (it.type === 'product') entry.monthProductRevenue += revenue
-            else entry.monthServiceRevenue += revenue
-          }
+          // A line can have several staff - each gets an equal share of its
+          // revenue (and so of the commission), and the service counts once
+          // for each of them.
+          const assigned = getItemStaff(it).filter((s) => s.id)
+          if (assigned.length === 0) return
+          const share = effectiveRevenues[idx] / assigned.length
+          assigned.forEach((s) => {
+            const entry = ensure(s.id)
+            entry.count += 1
+            entry.revenue += share
+            if (inMonth) {
+              if (it.type === 'product') entry.monthProductRevenue += share
+              else entry.monthServiceRevenue += share
+            }
+          })
         })
       } else if (b.staff?.id) {
         // Legacy bills created before per-item staff assignment existed —

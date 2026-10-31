@@ -372,10 +372,29 @@ export function previewFollowUpApiTemplate(client, settings) {
   return text.replace(/\{\{\d+\}\}/g, () => body[i++] ?? '')
 }
 
+// Staff assigned to ONE bill line, always returned as an array of
+// { id, name }. A line can have several staff (e.g. one person colours
+// while another blow-dries) - those live in `staffIds`/`staffNames`.
+// Older bills only have a single `staffId`/`staffName`, so those are
+// handled too. (`staffId`/`staffName` on a multi-staff line still hold the
+// first person's id and the joined names, so code that hasn't been updated
+// to read the array keeps showing something sensible.)
+export function getItemStaff(it) {
+  if (!it) return []
+  if (Array.isArray(it.staffIds) && it.staffIds.length > 0) {
+    return it.staffIds.map((id, i) => ({ id, name: it.staffNames?.[i] || '' }))
+  }
+  if (it.staffId) return [{ id: it.staffId, name: it.staffName || '' }]
+  if (it.staffName) return [{ id: '', name: it.staffName }]
+  return []
+}
+
 export function getBillStaffNames(bill) {
   const names = new Set()
   bill.items?.forEach((it) => {
-    if (it.staffName) names.add(it.staffName)
+    getItemStaff(it).forEach((s) => {
+      if (s.name) names.add(s.name)
+    })
   })
   if (names.size === 0 && bill.staff?.name) names.add(bill.staff.name)
   if (names.size === 0 && bill.staffList?.length) bill.staffList.forEach((s) => names.add(s.name))
@@ -709,4 +728,146 @@ export function calcBillTotals({ items, discountType, discountValue, taxPercent 
     taxAmount: Math.round(taxAmount * 100) / 100,
     total: Math.round(total * 100) / 100,
   }
+}
+
+// ---------------------------------------------------------------------
+// Gender-based service filtering (New Bill / Edit Bill)
+// ---------------------------------------------------------------------
+
+// Maps a client's stored gender to the service filter that should be
+// pre-selected for them. Anything other than Male/Female (including
+// "Other" and unknown) shows every service.
+export function genderToServiceFilter(gender) {
+  if (gender === 'Male') return 'Male'
+  if (gender === 'Female') return 'Female'
+  return 'All'
+}
+
+// A service tagged "Unisex" (or with no gender set) is shown for everyone;
+// otherwise it's only shown when it matches the chosen filter.
+export function serviceMatchesGender(service, filter) {
+  if (!filter || filter === 'All') return true
+  const g = service?.gender
+  if (!g || g === 'Unisex') return true
+  return g === filter
+}
+
+// ---------------------------------------------------------------------
+// Advance bookings
+// ---------------------------------------------------------------------
+
+export const ADVANCE_RECEIPT_PREFIX = 'ADV'
+
+// Works out how an advance payment settles against a final bill total.
+//   advanceApplied - the part of the advance that covers the bill
+//   balanceDue     - what the client still has to pay now
+//   refundDue      - advance that exceeds the bill (e.g. after a big discount)
+export function calcAdvanceSettlement(total, advancePaid) {
+  const t = Math.max(0, Number(total) || 0)
+  const adv = Math.max(0, Number(advancePaid) || 0)
+  const advanceApplied = Math.min(adv, t)
+  return {
+    advanceApplied: Math.round(advanceApplied * 100) / 100,
+    balanceDue: Math.round((t - advanceApplied) * 100) / 100,
+    refundDue: Math.round((adv - advanceApplied) * 100) / 100,
+  }
+}
+
+// Splits a bill's money by the method it actually came in through. A bill
+// that settled an advance has two parts - the advance (paid earlier, by
+// `advanceMethod`) and the balance (paid today, by `paymentMethod`) - so
+// per-method totals in Dashboard/Reports stay accurate instead of putting
+// the whole amount under the balance's method.
+export function getBillPaymentSplit(bill) {
+  const total = Number(bill.total) || 0
+  const applied = Number(bill.advanceApplied) || 0
+  if (applied > 0 && bill.advanceMethod) {
+    const parts = [{ method: bill.advanceMethod, amount: applied }]
+    const rest = Math.round((total - applied) * 100) / 100
+    if (rest > 0) parts.push({ method: bill.paymentMethod, amount: rest })
+    return parts
+  }
+  return [{ method: bill.paymentMethod, amount: total }]
+}
+
+// Formats a 24h "HH:MM" value (from <input type="time">) as "4:30 PM".
+// Anything that isn't in that shape (e.g. free text from the public
+// booking site) is returned untouched.
+export function formatTimeLabel(time) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(time || '').trim())
+  if (!m) return time || ''
+  let h = Number(m[1])
+  const suffix = h >= 12 ? 'PM' : 'AM'
+  h = h % 12 || 12
+  return `${h}:${m[2]} ${suffix}`
+}
+
+// Shapes an advance booking like a bill so the normal invoice layout / PDF
+// can render it as an "Advance Receipt".
+export function advanceBookingToReceipt(booking) {
+  return {
+    ...booking,
+    isAdvanceReceipt: true,
+    billNo: booking.receiptNo,
+    date: booking.createdAt,
+    paymentMethod: booking.advanceMethod,
+  }
+}
+
+export function whatsappAdvanceMessage(settings, booking) {
+  const name = booking.client?.name || 'there'
+  const when = `${formatDate(booking.scheduledDate)}${booking.scheduledTime ? ` at ${formatTimeLabel(booking.scheduledTime)}` : ''}`
+  const lines = [
+    `Hello ${name}, thank you for booking with *${settings.salonName}*!`,
+    ``,
+    `Advance receipt *${booking.receiptNo}*`,
+    `Appointment: *${when}*`,
+    `Estimated total: ${formatCurrency(booking.total, settings.currencySymbol)}`,
+    `Advance paid: *${formatCurrency(booking.advanceAmount, settings.currencySymbol)}*`,
+    `Balance due at the salon: *${formatCurrency(Math.max(0, booking.total - booking.advanceAmount), settings.currencySymbol)}*`,
+    ``,
+    `See you soon!`,
+    `— Team ${settings.salonName}`,
+  ]
+  return lines.join('\n')
+}
+
+// ---------------------------------------------------------------------
+// Appointment WhatsApp messages (confirmation + automatic reminder)
+// ---------------------------------------------------------------------
+
+// Appointments from the public booking site store the time as free-form
+// text ("4:30 PM", "16:30", "4 PM"...). Parses date + that text into a
+// local Date, or returns null if the time can't be understood.
+export function parseAppointmentDateTime(dateStr, timeStr) {
+  if (!dateStr) return null
+  const dm = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(dateStr))
+  if (!dm) return null
+  const tm = /^\s*(\d{1,2})(?:[:.](\d{2}))?(?::\d{2})?\s*([ap])?\.?\s*m?\.?\s*$/i.exec(String(timeStr || ''))
+  if (!tm) return null
+  let hour = Number(tm[1])
+  const minute = Number(tm[2] || 0)
+  const meridiem = (tm[3] || '').toLowerCase()
+  if (minute > 59) return null
+  if (meridiem) {
+    if (hour < 1 || hour > 12) return null
+    if (meridiem === 'p' && hour < 12) hour += 12
+    if (meridiem === 'a' && hour === 12) hour = 0
+  } else if (hour > 23) {
+    return null
+  }
+  const d = new Date(Number(dm[1]), Number(dm[2]) - 1, Number(dm[3]), hour, minute, 0, 0)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+// Dynamic values for the approved appointment templates, built from the
+// appointment row (same approach as the invoice/membership templates):
+//   {{1}} client name, {{2}} service, {{3}} date, {{4}} time
+// Used by BOTH the confirmation and the reminder template.
+export function buildAppointmentTemplateParams(appointment) {
+  const name = appointment.client_name || 'there'
+  const service = appointment.service_name || 'your appointment'
+  const date = appointment.appointment_date ? formatInvoiceTemplateDate(appointment.appointment_date + 'T00:00:00') : ''
+  const time = appointment.appointment_time || 'the booked time'
+  return { body: [name, service, date, time] }
 }

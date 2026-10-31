@@ -14,6 +14,7 @@ import {
   AlarmClock,
   Crown,
   CalendarClock,
+  CalendarPlus,
   Wallet,
 } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
@@ -23,6 +24,7 @@ const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true, page: 'dashboard' },
   { to: '/new-bill', label: 'New Bill', icon: Receipt, page: 'new-bill' },
   { to: '/appointments', label: 'Appointments', icon: CalendarClock, badgeKey: 'pendingAppointments', page: 'appointments' },
+  { to: '/advance-bookings', label: 'Advance Bookings', icon: CalendarPlus, badgeKey: 'openAdvance', page: 'advance-bookings' },
   { to: '/history', label: 'Billing History', icon: History, page: 'history' },
   { to: '/clients', label: 'Clients', icon: Users, page: 'clients' },
   { to: '/memberships', label: 'Memberships', icon: Crown, page: 'memberships' },
@@ -36,7 +38,10 @@ const NAV_ITEMS = [
 ]
 
 export default function Sidebar({ onNavigate }) {
-  const { appointments, role } = useApp()
+  const { appointments, advanceBookings, role } = useApp()
+  const d = new Date()
+  const todayIso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const advanceToday = advanceBookings.filter((b) => b.status === 'booked' && b.scheduledDate <= todayIso).length
   const pendingAppointments = appointments.filter((a) => a.status === 'pending').length
   const visibleItems = NAV_ITEMS.filter((item) => hasPageAccess(role, item.page))
 
@@ -72,6 +77,11 @@ export default function Sidebar({ onNavigate }) {
             {badgeKey === 'pendingAppointments' && pendingAppointments > 0 && (
               <span className="ml-auto text-[10px] font-semibold bg-brass text-ink rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
                 {pendingAppointments}
+              </span>
+            )}
+            {badgeKey === 'openAdvance' && advanceToday > 0 && (
+              <span className="ml-auto text-[10px] font-semibold bg-brass text-ink rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
+                {advanceToday}
               </span>
             )}
           </NavLink>

@@ -1,9 +1,10 @@
 import React, { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { CalendarClock, Check, X, Trash2, ReceiptText, Phone, RefreshCw, CalendarCheck2 } from 'lucide-react'
+import { CalendarClock, Check, X, Trash2, ReceiptText, Phone, RefreshCw, CalendarCheck2, MessageCircle, Loader2, CircleCheck, CircleX } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { PageHeader, EmptyState, Badge, StatCard } from '../components/ui.jsx'
 import { formatDate, formatPhoneDisplay } from '../utils/helpers.js'
+import { isAppointmentConfirmApiConfigured, isAppointmentReminderApiConfigured } from '../utils/whatsappCloudApi.js'
 
 const TABS = [
   { id: 'upcoming', label: 'Upcoming' },
@@ -24,10 +25,33 @@ function todayStr() {
 }
 
 export default function Appointments() {
-  const { appointments, clients, markAppointmentStatus, removeAppointment } = useApp()
+  const { appointments, clients, markAppointmentStatus, confirmAppointment, removeAppointment, settings } = useApp()
   const navigate = useNavigate()
   const [tab, setTab] = useState('upcoming')
   const [confirmDelete, setConfirmDelete] = useState(null)
+  // id of the appointment whose message is being sent, and the latest result
+  // of a confirm / resend to show in the banner.
+  const [sendingId, setSendingId] = useState(null)
+  const [notice, setNotice] = useState(null) // { tone: 'ok' | 'error' | 'info', text }
+  const confirmMessagesOn = isAppointmentConfirmApiConfigured(settings)
+  const reminderOn = isAppointmentReminderApiConfigured(settings)
+
+  async function handleConfirm(appt, { resendOnly = false } = {}) {
+    setSendingId(appt.id)
+    setNotice(null)
+    const result = await confirmAppointment(appt, { resendOnly })
+    setSendingId(null)
+    if (result.sent) {
+      setNotice({ tone: 'ok', text: `${resendOnly ? 'Confirmation re-sent' : 'Appointment confirmed and WhatsApp message sent'} to ${appt.client_name}.` })
+    } else if (result.error) {
+      setNotice({
+        tone: 'error',
+        text: `${resendOnly ? '' : 'Appointment confirmed, but '}the WhatsApp message to ${appt.client_name} could not be sent: ${result.error}`,
+      })
+    } else if (!resendOnly) {
+      setNotice({ tone: 'info', text: 'Appointment confirmed. (WhatsApp confirmation messages are off — turn them on in Settings.)' })
+    }
+  }
 
   const today = todayStr()
 
@@ -88,6 +112,32 @@ export default function Appointments() {
         ))}
       </div>
 
+      {notice && (
+        <div
+          className={`flex items-start justify-between gap-3 mb-5 px-4 py-3 rounded-lg text-sm ${
+            notice.tone === 'ok'
+              ? 'bg-success/10 text-success'
+              : notice.tone === 'error'
+                ? 'bg-danger/10 text-danger'
+                : 'bg-black/5 text-muted'
+          }`}
+        >
+          <span className="flex items-start gap-2">
+            {notice.tone === 'ok' ? <CircleCheck size={16} className="mt-0.5 shrink-0" /> : notice.tone === 'error' ? <CircleX size={16} className="mt-0.5 shrink-0" /> : null}
+            {notice.text}
+          </span>
+          <button onClick={() => setNotice(null)} className="shrink-0 opacity-70 hover:opacity-100">
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
+      {reminderOn && (
+        <p className="text-xs text-muted mb-4 flex items-center gap-1.5">
+          <MessageCircle size={13} /> Automatic reminders go out {settings.appointmentReminderMinutes} min before confirmed appointments while this app is open.
+        </p>
+      )}
+
       {filtered.length === 0 ? (
         <EmptyState
           icon={CalendarClock}
@@ -129,16 +179,33 @@ export default function Appointments() {
                     </td>
                     <td className="px-5 py-3.5 capitalize">
                       <Badge tone={STATUS_TONE[a.status] || 'muted'}>{a.status}</Badge>
+                      {a.status === 'confirmed' && a.confirmation_sent_at && (
+                        <span className="block text-[11px] text-success normal-case mt-0.5">Confirmation sent</span>
+                      )}
+                      {a.status === 'confirmed' && a.reminder_sent_at && (
+                        <span className="block text-[11px] text-success normal-case">Reminder sent</span>
+                      )}
                     </td>
                     <td className="px-5 py-3.5">
                       <div className="flex items-center justify-end gap-1">
                         {a.status === 'pending' && (
                           <button
-                            onClick={() => markAppointmentStatus(a.id, 'confirmed')}
-                            className="p-1.5 text-muted hover:text-plum"
-                            title="Confirm"
+                            onClick={() => handleConfirm(a)}
+                            disabled={sendingId === a.id}
+                            className="p-1.5 text-muted hover:text-plum disabled:opacity-50"
+                            title={confirmMessagesOn ? 'Confirm & send WhatsApp message' : 'Confirm'}
                           >
-                            <Check size={15} />
+                            {sendingId === a.id ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />}
+                          </button>
+                        )}
+                        {a.status === 'confirmed' && confirmMessagesOn && a.phone && (
+                          <button
+                            onClick={() => handleConfirm(a, { resendOnly: true })}
+                            disabled={sendingId === a.id}
+                            className="p-1.5 text-muted hover:text-plum disabled:opacity-50"
+                            title="Resend confirmation message"
+                          >
+                            {sendingId === a.id ? <Loader2 size={15} className="animate-spin" /> : <MessageCircle size={15} />}
                           </button>
                         )}
                         {a.status !== 'completed' && a.status !== 'cancelled' && (

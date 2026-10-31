@@ -599,3 +599,10 @@ In short, this system provides:
 ## 📄 License
 
 This project is private/proprietary unless a separate license is added by the project owner.
+
+## Recent additions
+
+- **Advance bookings** — New Bill → *Advance booking* takes an advance, books the date/time and prints an advance receipt (ADV-0001…) with the advance paid and balance due. Manage them under *Advance Bookings*; *Finalise bill* opens the normal billing screen (discounts, tax, etc.) with the advance deducted. Uses the existing `app_state` table — nothing extra to run in Supabase.
+- **Multiple staff per service** — assign several staff to one service line; revenue/commission is split equally.
+- **Appointment WhatsApp messages** — Settings → *Appointment WhatsApp messages*: a confirmation sent on Confirm, and an automatic reminder N minutes before the appointment. Run `supabase/appointment_messages.sql` once so each message is sent only once across devices. Reminders are sent by the app itself, so a signed-in tab must be open.
+- **Gender-aware services** — billing a male/female client shows only that gender's services (plus Unisex); override with the chips above the list.

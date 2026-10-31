@@ -55,3 +55,51 @@ export function subscribeToAppointments(onChange) {
     supabase.removeChannel(channel)
   }
 }
+
+// Records that the confirmation WhatsApp went out. Separate from the status
+// update on purpose: if the `confirmation_sent_at` column hasn't been added
+// yet (supabase/appointment_messages.sql), only this call fails - the
+// confirm itself still works.
+export async function markConfirmationSent(id) {
+  if (!isSupabaseConfigured) return
+  try {
+    const { error } = await supabase
+      .from('appointments')
+      .update({ confirmation_sent_at: new Date().toISOString() })
+      .eq('id', id)
+    if (error) console.warn('[supabase] could not record confirmation_sent_at:', error.message)
+  } catch (err) {
+    console.warn('[supabase] could not record confirmation_sent_at:', err)
+  }
+}
+
+// Atomically claims the right to send an appointment's reminder: the update
+// only matches while reminder_sent_at is still null, so when two devices are
+// open at once only one of them gets the row back and sends.
+// Returns 'claimed' | 'already' | 'unsupported' (column missing / no Supabase
+// - the caller then falls back to this device's own sent-list).
+export async function claimAppointmentReminder(id) {
+  if (!isSupabaseConfigured) return 'unsupported'
+  try {
+    const { data, error } = await supabase
+      .from('appointments')
+      .update({ reminder_sent_at: new Date().toISOString() })
+      .eq('id', id)
+      .is('reminder_sent_at', null)
+      .select('id')
+    if (error) return 'unsupported'
+    return data && data.length > 0 ? 'claimed' : 'already'
+  } catch {
+    return 'unsupported'
+  }
+}
+
+// Gives the claim back if the send then failed, so it's retried.
+export async function releaseAppointmentReminder(id) {
+  if (!isSupabaseConfigured) return
+  try {
+    await supabase.from('appointments').update({ reminder_sent_at: null }).eq('id', id)
+  } catch {
+    // best effort
+  }
+}

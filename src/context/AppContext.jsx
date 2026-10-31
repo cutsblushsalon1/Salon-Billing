@@ -1,10 +1,31 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react'
 import { seedServices, seedProducts, seedStaff, seedTemplates, seedMembershipPlans, defaultSettings } from '../data/seed.js'
-import { uid, buildInvoiceNumber, formatCurrency, getStaffSalaryStatus } from '../utils/helpers.js'
+import {
+  uid,
+  buildInvoiceNumber,
+  formatCurrency,
+  getStaffSalaryStatus,
+  parseAppointmentDateTime,
+  ADVANCE_RECEIPT_PREFIX,
+} from '../utils/helpers.js'
 import { pushInvoiceToSupabase } from '../utils/invoiceSync.js'
 import { fetchAppState, fetchAppStateKey, saveAppState } from '../lib/appStateSync.js'
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient.js'
-import { fetchAppointments, updateAppointmentStatus, deleteAppointmentRemote, subscribeToAppointments } from '../utils/appointmentsSync.js'
+import {
+  fetchAppointments,
+  updateAppointmentStatus,
+  deleteAppointmentRemote,
+  subscribeToAppointments,
+  markConfirmationSent,
+  claimAppointmentReminder,
+  releaseAppointmentReminder,
+} from '../utils/appointmentsSync.js'
+import {
+  isAppointmentConfirmApiConfigured,
+  isAppointmentReminderApiConfigured,
+  sendAppointmentConfirmationViaCloudApi,
+  sendAppointmentReminderViaCloudApi,
+} from '../utils/whatsappCloudApi.js'
 import { pushPublicCatalog } from '../utils/publicCatalogSync.js'
 import { requestNotificationPermission, notifyNewAppointment } from '../utils/appointmentAlerts.js'
 import { ROLES } from '../utils/permissions.js'
@@ -45,6 +66,8 @@ const STORAGE_KEYS = {
   membershipPlans: 'salon_membership_plans',
   clientMemberships: 'salon_client_memberships',
   userRoles: 'salon_user_roles',
+  advanceBookings: 'salon_advance_bookings',
+  sentReminders: 'salon_sent_reminders',
 }
 
 export function AppProvider({ children }) {
@@ -124,6 +147,10 @@ export function AppProvider({ children }) {
   // just a lookup table matching a signed-in email to a permission role.
   const [userRoles, setUserRoles] = useState(() => loadJSON(STORAGE_KEYS.userRoles, []))
 
+  // Advance bookings: a client pays an advance now (receipt generated), the
+  // booking is finalised into a normal bill when they come in.
+  const [advanceBookings, setAdvanceBookings] = useState(() => loadJSON(STORAGE_KEYS.advanceBookings, []))
+
   // Appointments booked by customers on the salon's separate public website.
   // These live in their own Supabase table (not the app_state blob) so the
   // booking site can insert a new row any time without needing to read and
@@ -158,7 +185,10 @@ export function AppProvider({ children }) {
       if (remote.expenses) setExpenses(remote.expenses)
       if (remote.staffAdvances) setStaffAdvances(remote.staffAdvances)
       if (remote.dismissedAutoExpenses) setDismissedAutoExpenses(remote.dismissedAutoExpenses)
-      if (remote.settings) setSettings(remote.settings)
+      // Merge over defaults so settings added after this blob was saved (e.g. the
+      // appointment message options) don't load as undefined.
+      if (remote.settings) setSettings({ ...defaultSettings, ...remote.settings })
+      if (remote.advanceBookings) setAdvanceBookings(remote.advanceBookings)
       if (remote.membershipPlans) setMembershipPlans(remote.membershipPlans)
       if (remote.clientMemberships) setClientMemberships(remote.clientMemberships)
       if (remote.userRoles) setUserRoles(remote.userRoles)
@@ -295,6 +325,11 @@ export function AppProvider({ children }) {
     saveJSON(STORAGE_KEYS.clientMemberships, clientMemberships)
     if (hydrated) saveAppState('clientMemberships', clientMemberships)
   }, [clientMemberships, hydrated])
+  useEffect(() => {
+    // Remote writes go through mutateAdvanceBookings (fetch-merge-write), not
+    // a blind overwrite here.
+    saveJSON(STORAGE_KEYS.advanceBookings, advanceBookings)
+  }, [advanceBookings])
   useEffect(() => {
     saveJSON(STORAGE_KEYS.userRoles, userRoles)
     if (hydrated) saveAppState('userRoles', userRoles)
@@ -1032,6 +1067,153 @@ export function AppProvider({ children }) {
     deleteAppointmentRemote(id)
   }, [])
 
+
+  // ---- Advance bookings ----
+  // Same fetch-merge-write approach as bills: apply this one change to the
+  // freshest remote list, so a device that's been open for hours can't wipe
+  // out bookings made elsewhere. `mutator` must be idempotent (upsert/remove
+  // by id), because it's applied once locally and once to the remote list.
+  const advanceRef = useRef(advanceBookings)
+  useEffect(() => {
+    advanceRef.current = advanceBookings
+  }, [advanceBookings])
+
+  const mutateAdvanceBookings = useCallback(async (mutator, removedId) => {
+    setAdvanceBookings((prev) => mutator(prev))
+    if (!isSupabaseConfigured) return
+    try {
+      const remoteRaw = await fetchAppStateKey('advanceBookings')
+      const base = Array.isArray(remoteRaw) ? remoteRaw : advanceRef.current
+      const merged = mutator(base)
+      await saveAppState('advanceBookings', merged)
+      setAdvanceBookings((prev) => {
+        const ids = new Set(merged.map((b) => b.id))
+        return [...merged, ...prev.filter((b) => !ids.has(b.id) && b.id !== removedId)]
+      })
+    } catch (err) {
+      console.error('[supabase] failed to merge-sync advance bookings:', err)
+    }
+  }, [])
+
+  // Creates the booking + its receipt number, and returns the saved record.
+  const createAdvanceBooking = useCallback(
+    (draft) => {
+      const receiptNo = buildInvoiceNumber(ADVANCE_RECEIPT_PREFIX, settings.advanceCounter || 1)
+      const booking = {
+        id: uid('adv_bk'),
+        receiptNo,
+        createdAt: new Date().toISOString(),
+        status: 'booked',
+        ...draft,
+      }
+      setSettings((prev) => ({ ...prev, advanceCounter: (Number(prev.advanceCounter) || 1) + 1 }))
+      mutateAdvanceBookings((list) => (list.some((b) => b.id === booking.id) ? list : [booking, ...list]))
+      return booking
+    },
+    [settings.advanceCounter, mutateAdvanceBookings],
+  )
+
+  const updateAdvanceBooking = useCallback(
+    (id, patch) => mutateAdvanceBookings((list) => list.map((b) => (b.id === id ? { ...b, ...patch } : b))),
+    [mutateAdvanceBookings],
+  )
+
+  const deleteAdvanceBooking = useCallback(
+    (id) => mutateAdvanceBookings((list) => list.filter((b) => b.id !== id), id),
+    [mutateAdvanceBookings],
+  )
+
+  // ---- Appointment WhatsApp messages ----
+  // Reminder ids this device has already sent (or claimed). Backup for when
+  // the appointments table doesn't have reminder_sent_at yet.
+  const sentRemindersRef = useRef(new Set(loadJSON(STORAGE_KEYS.sentReminders, [])))
+  const remindersInFlightRef = useRef(new Set())
+
+  function rememberReminderSent(id) {
+    sentRemindersRef.current.add(id)
+    saveJSON(STORAGE_KEYS.sentReminders, Array.from(sentRemindersRef.current).slice(-500))
+  }
+
+  // Marks the appointment confirmed and, when Settings has confirmation
+  // messages switched on, sends the WhatsApp template. Resolves to
+  // { sent: boolean, skipped?: boolean, error?: string } - `skipped` means
+  // sending isn't configured (nothing was attempted).
+  const confirmAppointment = useCallback(
+    async (appt, { resendOnly = false } = {}) => {
+      if (!resendOnly) {
+        setAppointments((prev) => prev.map((a) => (a.id === appt.id ? { ...a, status: 'confirmed' } : a)))
+        updateAppointmentStatus(appt.id, 'confirmed')
+      }
+      if (!isAppointmentConfirmApiConfigured(settings)) return { sent: false, skipped: true }
+      const result = await sendAppointmentConfirmationViaCloudApi(settings, appt)
+      if (!result.ok) return { sent: false, error: result.error }
+      const stamp = new Date().toISOString()
+      setAppointments((prev) => prev.map((a) => (a.id === appt.id ? { ...a, confirmation_sent_at: stamp } : a)))
+      markConfirmationSent(appt.id)
+      return { sent: true }
+    },
+    [settings],
+  )
+
+  // Automatic reminder: every 30s, send the reminder for any confirmed
+  // appointment that starts within the next N minutes (N = Settings). This
+  // runs in the browser, so it only fires while the app is open on a
+  // signed-in device. Refs keep the interval reading fresh data without
+  // restarting it on every state change.
+  const appointmentsRef = useRef(appointments)
+  const settingsRef = useRef(settings)
+  useEffect(() => {
+    appointmentsRef.current = appointments
+  }, [appointments])
+  useEffect(() => {
+    settingsRef.current = settings
+  }, [settings])
+
+  useEffect(() => {
+    if (!isAuthed || !hydrated) return undefined
+    async function tick() {
+      const cfg = settingsRef.current
+      if (!isAppointmentReminderApiConfigured(cfg)) return
+      const leadMs = (Number(cfg.appointmentReminderMinutes) || 0) * 60000
+      const now = Date.now()
+      for (const a of appointmentsRef.current) {
+        if (a.status !== 'confirmed' || !a.phone || a.reminder_sent_at) continue
+        if (sentRemindersRef.current.has(a.id) || remindersInFlightRef.current.has(a.id)) continue
+        const when = parseAppointmentDateTime(a.appointment_date, a.appointment_time)
+        if (!when) continue
+        const startsIn = when.getTime() - now
+        // Inside the reminder window, and not already started.
+        if (startsIn > leadMs || startsIn <= 0) continue
+        remindersInFlightRef.current.add(a.id)
+        try {
+          const claim = await claimAppointmentReminder(a.id)
+          if (claim === 'already') {
+            rememberReminderSent(a.id)
+            continue
+          }
+          const result = await sendAppointmentReminderViaCloudApi(cfg, a)
+          if (result.ok) {
+            rememberReminderSent(a.id)
+            setAppointments((prev) =>
+              prev.map((x) => (x.id === a.id ? { ...x, reminder_sent_at: new Date().toISOString() } : x)),
+            )
+          } else {
+            console.error('[reminder] send failed:', result.error)
+            if (claim === 'claimed') await releaseAppointmentReminder(a.id)
+            // Don't hammer a failing send every 30s - try again in a few minutes.
+            setTimeout(() => remindersInFlightRef.current.delete(a.id), 5 * 60000)
+            continue
+          }
+        } finally {
+          if (sentRemindersRef.current.has(a.id)) remindersInFlightRef.current.delete(a.id)
+        }
+      }
+    }
+    tick()
+    const timer = setInterval(tick, 30000)
+    return () => clearInterval(timer)
+  }, [isAuthed, hydrated])
+
   // Manually re-publishes the current services list to the public_catalog
   // table the booking website reads from. This normally happens
   // automatically whenever the services list changes (see the effect
@@ -1071,8 +1253,9 @@ export function AppProvider({ children }) {
       settings,
       membershipPlans,
       clientMemberships,
+      advanceBookings,
     }
-  }, [clients, services, products, staff, attendance, templates, followUps, bills, expenses, staffAdvances, dismissedAutoExpenses, settings, membershipPlans, clientMemberships])
+  }, [clients, services, products, staff, attendance, templates, followUps, bills, expenses, staffAdvances, dismissedAutoExpenses, settings, membershipPlans, clientMemberships, advanceBookings])
 
   const restoreBackup = useCallback((data) => {
     if (data.clients) setClients(data.clients)
@@ -1093,7 +1276,11 @@ export function AppProvider({ children }) {
       // deliberate overwrite, so push it explicitly here.
       if (hydrated) saveAppState('bills', data.bills)
     }
-    if (data.settings) setSettings(data.settings)
+    if (data.settings) setSettings({ ...defaultSettings, ...data.settings })
+    if (data.advanceBookings) {
+      setAdvanceBookings(data.advanceBookings)
+      if (hydrated) saveAppState('advanceBookings', data.advanceBookings)
+    }
     if (data.membershipPlans) setMembershipPlans(data.membershipPlans)
     if (data.clientMemberships) setClientMemberships(data.clientMemberships)
   }, [hydrated])
@@ -1169,7 +1356,12 @@ export function AppProvider({ children }) {
     claimFreeServices,
     appointments,
     markAppointmentStatus,
+    confirmAppointment,
     removeAppointment,
+    advanceBookings,
+    createAdvanceBooking,
+    updateAdvanceBooking,
+    deleteAdvanceBooking,
     publishServiceCatalog,
     publishStaffRoster,
     isSupabaseConfigured,

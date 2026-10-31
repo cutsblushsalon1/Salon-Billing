@@ -486,6 +486,20 @@ export const defaultSettings = {
   membershipApiEnabled: false,
   membershipTemplateName: 'membership_activated',
   membershipTemplateLanguage: 'en',
+  // Appointment confirmation - sent via the WhatsApp CRM when "Confirm" is
+  // clicked on an appointment. Off by default.
+  appointmentApiEnabled: false,
+  appointmentTemplateName: 'appointment_confirmed',
+  appointmentTemplateLanguage: 'en',
+  // Automatic appointment reminder - sent N minutes before a confirmed
+  // appointment, while the app is open on a front-desk device.
+  appointmentReminderEnabled: false,
+  appointmentReminderMinutes: 15,
+  appointmentReminderTemplateName: 'appointment_reminder',
+  appointmentReminderTemplateLanguage: 'en',
+  // Advance booking receipts (ADV-0001, ADV-0002...) - own counter, separate
+  // from the invoice counter.
+  advanceCounter: 1,
 }
 
 export const seedTemplates = [
